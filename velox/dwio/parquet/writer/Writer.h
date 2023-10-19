@@ -132,6 +132,13 @@ class Writer : public dwio::common::Writer {
   void abort() override;
 
  private:
+  void writeImpl(const VectorPtr& data);
+  bool dataContainsOrIsDictionaryRecursive(const VectorPtr& data);
+  VectorPtr flattenVector(const VectorPtr& data);
+  void flattenDictionaryVector(const VectorPtr& data, VectorPtr& out);
+  template <TypeKind kind>
+  void flattenDict(const BaseVector& vec, VectorPtr& out);
+
   // Pool for 'stream_'.
   std::shared_ptr<memory::MemoryPool> pool_;
   std::shared_ptr<memory::MemoryPool> generalPool_;

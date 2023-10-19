@@ -137,7 +137,7 @@ struct TestParam {
 
   CompressionKind compressionKind() const {
     return static_cast<facebook::velox::common::CompressionKind>(
-        (value & ((1L << 48) - 1)) >> 40);
+        (value & ((1L << 56) - 1)) >> 48);
   }
 
   bool multiDrivers() const {
@@ -1009,6 +1009,9 @@ class PartitionedTableWriterTest
     const std::vector<bool> multiDriverOptions = {false, true};
     // Add Parquet with https://github.com/facebookincubator/velox/issues/5560
     std::vector<FileFormat> fileFormats = {FileFormat::DWRF};
+    if (hasWriterFactory(FileFormat::PARQUET)) {
+      fileFormats.push_back(FileFormat::PARQUET);
+    }
     for (bool multiDrivers : multiDriverOptions) {
       for (FileFormat fileFormat : fileFormats) {
         testParams.push_back(TestParam{
@@ -1121,6 +1124,9 @@ class BucketedTableOnlyWriteTest
     const std::vector<bool> multiDriverOptions = {false, true};
     // Add Parquet with https://github.com/facebookincubator/velox/issues/5560
     std::vector<FileFormat> fileFormats = {FileFormat::DWRF};
+    if (hasWriterFactory(FileFormat::PARQUET)) {
+      fileFormats.push_back(FileFormat::PARQUET);
+    }
     for (bool multiDrivers : multiDriverOptions) {
       for (FileFormat fileFormat : fileFormats) {
         testParams.push_back(TestParam{
@@ -1212,6 +1218,9 @@ class PartitionedWithoutBucketTableWriterTest
     const std::vector<bool> multiDriverOptions = {false, true};
     // Add Parquet with https://github.com/facebookincubator/velox/issues/5560
     std::vector<FileFormat> fileFormats = {FileFormat::DWRF};
+    if (hasWriterFactory(FileFormat::PARQUET)) {
+      fileFormats.push_back(FileFormat::PARQUET);
+    }
     for (bool multiDrivers : multiDriverOptions) {
       for (FileFormat fileFormat : fileFormats) {
         testParams.push_back(TestParam{

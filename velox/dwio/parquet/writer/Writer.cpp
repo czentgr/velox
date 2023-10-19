@@ -214,15 +214,7 @@ dwio::common::StripeProgress getStripeProgress(
       .stripeRowCount = stagingRows, .stripeSizeEstimate = stagingBytes};
 }
 
-/**
- * This method would cache input `ColumnarBatch` to make the size of row group
- * big. It would flush when:
- * - the cached numRows bigger than `rowsInRowGroup_`
- * - the cached bytes bigger than `bytesInRowGroup_`
- *
- * This method assumes each input `ColumnarBatch` have same schema.
- */
-void Writer::write(const VectorPtr& data) {
+void Writer::writeImpl(const VectorPtr& data) {
   ArrowArray array;
   ArrowSchema schema;
   exportToArrow(data, array, generalPool_.get());
@@ -251,6 +243,107 @@ void Writer::write(const VectorPtr& data) {
   }
   arrowContext_->stagingRows += numRows;
   arrowContext_->stagingBytes += bytes;
+}
+
+bool Writer::dataContainsOrIsDictionaryRecursive(const VectorPtr& data) {
+  if (data->encoding() == VectorEncoding::Simple::DICTIONARY) {
+    return true;
+  } else if (data->encoding() == VectorEncoding::Simple::ROW) {
+    auto& rows = *data->asUnchecked<RowVector>();
+    auto numChildren = rows.childrenSize();
+    for (auto i = 0; i < numChildren; ++i) {
+      if (dataContainsOrIsDictionaryRecursive(rows.childAt(i))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+template <TypeKind kind>
+void Writer::flattenDict(const BaseVector& vec, VectorPtr& out) {
+  using NativeType = typename velox::TypeTraits<kind>::NativeType;
+  SelectivityVector allRows(vec.size());
+  DecodedVector decoded(vec, allRows);
+  auto flatVector = BaseVector::create<FlatVector<NativeType>>(
+      vec.type(), decoded.size(), generalPool_.get());
+
+  if (decoded.mayHaveNulls()) {
+    allRows.applyToSelected([&](vector_size_t row) {
+      if (decoded.isNullAt(row)) {
+        flatVector->setNull(row, true);
+      } else {
+        flatVector->set(row, decoded.valueAt<NativeType>(row));
+      }
+    });
+  } else {
+    allRows.applyToSelected([&](vector_size_t row) {
+      flatVector->set(row, decoded.valueAt<NativeType>(row));
+    });
+  }
+  out = flatVector;
+}
+
+void Writer::flattenDictionaryVector(const VectorPtr& data, VectorPtr& out) {
+  VELOX_CHECK(
+      data->isScalar(),
+      "Dictionary flattening is only supported for scalar types.");
+  VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(flattenDict, data->typeKind(), *data, out);
+}
+
+VectorPtr Writer::flattenVector(const VectorPtr& data) {
+  VectorPtr result{nullptr};
+  switch (data->encoding()) {
+    case VectorEncoding::Simple::DICTIONARY: {
+      flattenDictionaryVector(data, result);
+      break;
+    }
+    case VectorEncoding::Simple::ROW: {
+      auto& rows = *data->asUnchecked<RowVector>();
+      auto numChildren = rows.childrenSize();
+      std::vector<VectorPtr> newChildren;
+      for (auto i = 0; i < numChildren; ++i) {
+        if (rows.childAt(i)->encoding() == VectorEncoding::Simple::DICTIONARY) {
+          flattenDictionaryVector(rows.childAt(i), result);
+          newChildren.push_back(result);
+        } else {
+          newChildren.push_back(rows.childAt(i));
+        }
+      }
+      result = std::make_shared<RowVector>(
+          generalPool_.get(),
+          data->type(),
+          data->nulls(),
+          data->size(),
+          newChildren,
+          data->getNullCount());
+      break;
+    }
+    default:
+      VELOX_NYI(
+          "Parquet writer can only flatten dictionary vectors or rows of dictionary vector children.")
+  }
+  return result;
+}
+
+/**
+ * This method would cache input `ColumnarBatch` to make the size of row group
+ * big. It would flush when:
+ * - the cached numRows bigger than `rowsInRowGroup_`
+ * - the cached bytes bigger than `bytesInRowGroup_`
+ *
+ * This method assumes each input `ColumnarBatch` have same schema.
+ */
+void Writer::write(const VectorPtr& data) {
+  VectorPtr dataToWrite{data};
+
+  // If data is a row of dictionarty encoded columns
+  // or itself a dictionary vector then convert the
+  // dictionary into a flat vector.
+  if (dataContainsOrIsDictionaryRecursive(data)) {
+    dataToWrite = flattenVector(data);
+  }
+  writeImpl(dataToWrite);
 }
 
 bool Writer::isCodecAvailable(common::CompressionKind compression) {
