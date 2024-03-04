@@ -65,7 +65,8 @@ StringView convertToStringView(
     T unscaledValue,
     int32_t scale,
     int32_t maxVarcharSize,
-    char* const startPosition) {
+    char* const startPosition,
+    int32_t maxOutputSize) {
   char* writePosition = startPosition;
   if (unscaledValue == 0) {
     *writePosition++ = '0';
@@ -109,7 +110,9 @@ StringView convertToStringView(
       writePosition = result.ptr;
     }
   }
-  return StringView(startPosition, writePosition - startPosition);
+  return (maxOutputSize < writePosition - startPosition)
+      ? StringView(startPosition, maxOutputSize)
+      : StringView(startPosition, writePosition - startPosition);
 }
 
 } // namespace
@@ -328,7 +331,8 @@ void CastExpr::applyCastKernel(
     vector_size_t row,
     EvalCtx& context,
     const SimpleVector<typename TypeTraits<FromKind>::NativeType>* input,
-    FlatVector<typename TypeTraits<ToKind>::NativeType>* result) {
+    FlatVector<typename TypeTraits<ToKind>::NativeType>* result,
+    const TypePtr& toType) {
   auto setError = [&](const std::string& details) {
     if (setNullInResultAtError()) {
       result->setNull(row, true);
@@ -344,14 +348,17 @@ void CastExpr::applyCastKernel(
     if constexpr (
         FromKind == TypeKind::TIMESTAMP &&
         (ToKind == TypeKind::VARCHAR || ToKind == TypeKind::VARBINARY)) {
+      auto maxLength = getVarcharMaxLength(*toType);
       auto writer = exec::StringWriter<>(result, row);
       const auto& queryConfig = context.execCtx()->queryCtx()->queryConfig();
       auto sessionTzName = queryConfig.sessionTimezone();
       if (queryConfig.adjustTimestampToTimezone() && !sessionTzName.empty()) {
         const auto* timeZone = date::locate_zone(sessionTzName);
-        hooks_->castTimestampToString(inputRowValue, writer, timeZone);
+        hooks_->castTimestampToString(
+            inputRowValue, writer, timeZone, maxLength);
       } else {
-        hooks_->castTimestampToString(inputRowValue, writer);
+        hooks_->castTimestampToString(
+            inputRowValue, writer, nullptr, maxLength);
       }
       return;
     }
@@ -378,9 +385,14 @@ void CastExpr::applyCastKernel(
 
     if constexpr (
         ToKind == TypeKind::VARCHAR || ToKind == TypeKind::VARBINARY) {
+      auto maxLength = getVarcharMaxLength(*toType);
       // Write the result output to the output vector
       auto writer = exec::StringWriter<>(result, row);
-      writer.copy_from(output);
+      if (output.size() > maxLength) {
+        writer.copy_from(output.substr(0, maxLength));
+      } else {
+        writer.copy_from(output);
+      }
       writer.finalize();
     } else {
       result->set(row, output);
@@ -622,13 +634,15 @@ VectorPtr CastExpr::applyDecimalToVarcharCast(
     const SelectivityVector& rows,
     const BaseVector& input,
     exec::EvalCtx& context,
-    const TypePtr& fromType) {
+    const TypePtr& fromType,
+    const TypePtr& toType) {
   VectorPtr result;
-  context.ensureWritable(rows, VARCHAR(), result);
+  context.ensureWritable(rows, toType, result);
   (*result).clearNulls(rows);
   const auto simpleInput = input.as<SimpleVector<FromNativeType>>();
   int precision = getDecimalPrecisionScale(*fromType).first;
   int scale = getDecimalPrecisionScale(*fromType).second;
+  auto maxVarcharLength = getVarcharMaxLength(*toType);
   // A varchar's size is estimated with unscaled value digits, dot, leading
   // zero, and possible minus sign.
   int32_t rowSize = precision + 1;
@@ -646,7 +660,11 @@ VectorPtr CastExpr::applyDecimalToVarcharCast(
       flatResult->setNoCopy(
           row,
           convertToStringView<FromNativeType>(
-              simpleInput->valueAt(row), scale, rowSize, inlined));
+              simpleInput->valueAt(row),
+              scale,
+              rowSize,
+              inlined,
+              maxVarcharLength));
     });
     return result;
   }
@@ -657,7 +675,7 @@ VectorPtr CastExpr::applyDecimalToVarcharCast(
 
   applyToSelectedNoThrowLocal(context, rows, result, [&](vector_size_t row) {
     auto stringView = convertToStringView<FromNativeType>(
-        simpleInput->valueAt(row), scale, rowSize, rawBuffer);
+        simpleInput->valueAt(row), scale, rowSize, rawBuffer, maxVarcharLength);
     flatResult->setNoCopy(row, stringView);
     if (!stringView.isInline()) {
       // If string view is inline, corresponding bytes on the raw string buffer
@@ -711,7 +729,8 @@ void CastExpr::applyCastPrimitives(
     const SelectivityVector& rows,
     exec::EvalCtx& context,
     const BaseVector& input,
-    VectorPtr& result) {
+    VectorPtr& result,
+    const TypePtr& toType) {
   using To = typename TypeTraits<ToKind>::NativeType;
   using From = typename TypeTraits<FromKind>::NativeType;
   auto* resultFlatVector = result->as<FlatVector<To>>();
@@ -721,24 +740,24 @@ void CastExpr::applyCastPrimitives(
     if (!hooks_->legacy()) {
       applyToSelectedNoThrowLocal(context, rows, result, [&](int row) {
         applyCastKernel<ToKind, FromKind, util::DefaultCastPolicy>(
-            row, context, inputSimpleVector, resultFlatVector);
+            row, context, inputSimpleVector, resultFlatVector, toType);
       });
     } else {
       applyToSelectedNoThrowLocal(context, rows, result, [&](int row) {
         applyCastKernel<ToKind, FromKind, util::LegacyCastPolicy>(
-            row, context, inputSimpleVector, resultFlatVector);
+            row, context, inputSimpleVector, resultFlatVector, toType);
       });
     }
   } else {
     if (!hooks_->legacy()) {
       applyToSelectedNoThrowLocal(context, rows, result, [&](int row) {
         applyCastKernel<ToKind, FromKind, util::TruncateCastPolicy>(
-            row, context, inputSimpleVector, resultFlatVector);
+            row, context, inputSimpleVector, resultFlatVector, toType);
       });
     } else {
       applyToSelectedNoThrowLocal(context, rows, result, [&](int row) {
         applyCastKernel<ToKind, FromKind, util::TruncateLegacyCastPolicy>(
-            row, context, inputSimpleVector, resultFlatVector);
+            row, context, inputSimpleVector, resultFlatVector, toType);
       });
     }
   }
@@ -790,7 +809,8 @@ void CastExpr::applyCastPrimitivesDispatch(
       rows,
       context,
       input,
-      result);
+      result,
+      toType);
 }
 
 } // namespace facebook::velox::exec

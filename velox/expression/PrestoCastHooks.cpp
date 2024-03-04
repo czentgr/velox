@@ -31,20 +31,29 @@ int32_t PrestoCastHooks::castStringToDate(const StringView& dateString) const {
 void PrestoCastHooks::castTimestampToString(
     const Timestamp& timestamp,
     StringWriter<false>& out,
-    const date::time_zone* timeZone) const {
+    const date::time_zone* timeZone,
+    std::optional<int32_t> maxStringLength) const {
+  auto writeData = [&out, &maxStringLength](const std::string& value) {
+    if (maxStringLength.has_value() && value.size() > maxStringLength.value()) {
+      out.copy_from(value.substr(0, maxStringLength.value()));
+    } else {
+      out.copy_from(value);
+    }
+  };
+
   if (legacyCast_) {
-    out.copy_from(
+    writeData(
         util::Converter<TypeKind::VARCHAR, void, util::LegacyCastPolicy>::cast(
             timestamp));
   } else {
     if (timeZone) {
       Timestamp adjustedTimestamp(timestamp);
       adjustedTimestamp.toTimezone(*timeZone);
-      out.copy_from(
+      writeData(
           util::Converter<TypeKind::VARCHAR, void, util::DefaultCastPolicy>::
               cast(adjustedTimestamp));
     } else {
-      out.copy_from(
+      writeData(
           util::Converter<TypeKind::VARCHAR, void, util::DefaultCastPolicy>::
               cast(timestamp));
     }

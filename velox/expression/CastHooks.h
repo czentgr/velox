@@ -36,7 +36,8 @@ class CastHooks {
   virtual void castTimestampToString(
       const Timestamp& timestamp,
       StringWriter<false>& out,
-      const date::time_zone* timeZone = nullptr) const = 0;
+      const date::time_zone* timeZone = nullptr,
+      std::optional<int32_t> maxStringLength = std::nullopt) const = 0;
 
   // Returns whether legacy cast semantics are enabled.
   virtual bool legacy() const = 0;

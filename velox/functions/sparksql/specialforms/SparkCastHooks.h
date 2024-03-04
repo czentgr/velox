@@ -36,7 +36,8 @@ class SparkCastHooks : public exec::CastHooks {
   void castTimestampToString(
       const Timestamp& timestamp,
       exec::StringWriter<false>& out,
-      const date::time_zone* timeZone) const override;
+      const date::time_zone* timeZone,
+      std::optional<int32_t> maxStringLength) const override;
 
   // Returns false.
   bool legacy() const override;

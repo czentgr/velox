@@ -104,6 +104,16 @@ Result HiveTypeParser::parseType() {
           std::atoi(precision.value.data()), std::atoi(scale.value.data()))};
     } else if (nt.metadata->tokenString[0] == "date") {
       return Result{DATE()};
+    } else if (
+        nt.metadata->tokenType == TokenType::String &&
+        nt.metadata->tokenString[1] == "varchar") {
+      eatToken(TokenType::LeftRoundBracket);
+      Token maxLength = nextToken();
+      VELOX_CHECK(
+          isPositiveInteger(maxLength.value.toString()),
+          "Varchar maximum length must be a positive integer");
+      eatToken(TokenType::RightRoundBracket);
+      return Result{VARCHAR(std::atoi(maxLength.value.data()))};
     }
     auto scalarType = createScalarType(nt.typeKind());
     VELOX_CHECK_NOT_NULL(
