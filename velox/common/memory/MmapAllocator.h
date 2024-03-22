@@ -162,6 +162,8 @@ class MmapAllocator : public MemoryAllocator {
  private:
   static constexpr uint64_t kAllSet = 0xffffffffffffffff;
 
+  mutable std::mutex mutex_;
+
   // Represents a range of virtual addresses used for allocating entries of
   // 'unitSize_' machine pages.
   class SizeClass {

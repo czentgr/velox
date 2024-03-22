@@ -56,6 +56,7 @@ MmapAllocator::~MmapAllocator() {
 bool MmapAllocator::allocateNonContiguousWithoutRetry(
     const SizeMix& sizeMix,
     Allocation& out) {
+  std::lock_guard<std::mutex> l(mutex_);
   const MachinePageCount numFreed = freeNonContiguousInternal(out);
   if (numFreed != 0) {
     numAllocated_.fetch_sub(numFreed);
@@ -163,6 +164,7 @@ bool MmapAllocator::ensureEnoughMappedPages(int32_t newMappedNeeded) {
 }
 
 int64_t MmapAllocator::freeNonContiguous(Allocation& allocation) {
+  std::lock_guard<std::mutex> l(mutex_);
   const auto numFreed = freeNonContiguousInternal(allocation);
   numAllocated_.fetch_sub(numFreed);
   return AllocationTraits::pageBytes(numFreed);
@@ -210,6 +212,7 @@ bool MmapAllocator::allocateContiguousWithoutRetry(
     ContiguousAllocation& allocation,
     MachinePageCount maxPages) {
   bool result;
+  std::lock_guard<std::mutex> l(mutex_);
   stats_.recordAllocate(AllocationTraits::pageBytes(numPages), 1, [&]() {
     result = allocateContiguousImpl(numPages, collateral, allocation, maxPages);
   });
@@ -361,6 +364,7 @@ bool MmapAllocator::allocateContiguousImpl(
 }
 
 void MmapAllocator::freeContiguous(ContiguousAllocation& allocation) {
+  std::lock_guard<std::mutex> l(mutex_);
   stats_.recordFree(
       allocation.size(), [&]() { freeContiguousImpl(allocation); });
 }
