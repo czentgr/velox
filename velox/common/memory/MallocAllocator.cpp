@@ -18,6 +18,7 @@
 #include "velox/common/memory/Memory.h"
 
 #include <sys/mman.h>
+#include <jemalloc/jemalloc.h>
 
 namespace facebook::velox::memory {
 MallocAllocator::MallocAllocator(size_t capacity, uint32_t reservationByteLimit)
@@ -78,7 +79,7 @@ bool MallocAllocator::allocateNonContiguousWithoutRetry(
           AllocationTraits::pageBytes(sizeClassSizes_[sizeMix.sizeIndices[i]]),
           sizeMix.sizeCounts[i],
           [&]() {
-            ptr = ::malloc(
+            ptr = malloc(
                 AllocationTraits::pageBytes(numSizeClassPages)); // NOLINT
           });
     }
@@ -101,7 +102,7 @@ bool MallocAllocator::allocateNonContiguousWithoutRetry(
     // Failed to allocate memory using malloc. Free any malloced pages and
     // return false.
     for (auto* buffer : buffers) {
-      ::free(buffer);
+      free(buffer);
     }
     out.clear();
     VELOX_MEM_LOG(WARNING)
@@ -173,6 +174,8 @@ bool MallocAllocator::allocateContiguousImpl(
   }
   numAllocated_.fetch_add(numPages);
   numMapped_.fetch_add(numPages);
+  void* data = malloc(AllocationTraits::pageBytes(maxPages));
+  /*
   void* data = ::mmap(
       nullptr,
       AllocationTraits::pageBytes(maxPages),
@@ -180,6 +183,7 @@ bool MallocAllocator::allocateContiguousImpl(
       MAP_PRIVATE | MAP_ANONYMOUS,
       -1,
       0);
+  */
   // TODO: add handling of MAP_FAILED.
   allocation.set(
       data,
@@ -200,7 +204,7 @@ int64_t MallocAllocator::freeNonContiguous(Allocation& allocation) {
     const int64_t numPages = run.numPages();
     freedPages += numPages;
     stats_.recordFree(AllocationTraits::pageBytes(numPages), [&]() {
-      ::free(ptr); // NOLINT
+      free(ptr); // NOLINT
     });
   }
 
@@ -223,11 +227,14 @@ void MallocAllocator::freeContiguousImpl(ContiguousAllocation& allocation) {
   useHugePages(allocation, false);
   const auto bytes = allocation.size();
   const auto numPages = allocation.numPages();
+  free(allocation.data());
+  /*
   if (::munmap(allocation.data(), allocation.maxSize()) < 0) {
     VELOX_MEM_LOG(ERROR) << "Error for munmap(" << allocation.data() << ", "
                          << succinctBytes(bytes) << "): '"
                          << folly::errnoStr(errno) << "'";
   }
+  */
   numMapped_.fetch_sub(numPages);
   numAllocated_.fetch_sub(numPages);
   decrementUsage(bytes);
@@ -306,7 +313,7 @@ void* MallocAllocator::allocateZeroFilledWithoutRetry(uint64_t bytes) {
 }
 
 void MallocAllocator::freeBytes(void* p, uint64_t bytes) noexcept {
-  ::free(p); // NOLINT
+  free(p); // NOLINT
   decrementUsage(bytes);
 }
 
