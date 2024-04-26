@@ -147,10 +147,13 @@ bool MallocAllocator::allocateContiguousImpl(
   auto numContiguousCollateralPages = allocation.numPages();
   if (numContiguousCollateralPages > 0) {
     useHugePages(allocation, false);
+    free(allocation.data());
+    /*
     if (::munmap(allocation.data(), allocation.maxSize()) < 0) {
       VELOX_MEM_LOG(ERROR) << "munmap got " << folly::errnoStr(errno) << "for "
                            << allocation.data() << ", " << allocation.size();
     }
+    */
     numMapped_.fetch_sub(numContiguousCollateralPages);
     numAllocated_.fetch_sub(numContiguousCollateralPages);
     decrementUsage(AllocationTraits::pageBytes(numContiguousCollateralPages));
@@ -326,7 +329,7 @@ std::string MallocAllocator::toString() const {
   std::stringstream out;
   out << "Memory Allocator[" << kindString(kind_) << " capacity "
       << ((capacity_ == kMaxMemory) ? "UNLIMITED" : succinctBytes(capacity_))
-      << " allocated bytes " << allocatedBytes_ << " allocated pages "
+      << " allocated bytes " << allocatedBytes_ << " reserved bytes " << reservations_.read() << " allocated pages "
       << numAllocated_ << " mapped pages " << numMapped_ << "]";
   return out.str();
 }
