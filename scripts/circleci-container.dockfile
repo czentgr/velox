@@ -13,13 +13,13 @@
 # limitations under the License.
 # Build the test and build container for presto_cpp
 #
-FROM quay.io/centos/centos:stream8
+FROM quay.io/centos/centos:stream9
 ARG cpu_target
 ENV CPU_TARGET=$cpu_target
 
 COPY scripts/setup-helper-functions.sh /
-COPY scripts/setup-centos8.sh /
+COPY scripts/setup-centos9.sh /
 COPY scripts/setup-adapters.sh /
-RUN mkdir build && ( cd build &&  bash /setup-centos8.sh ) && rm -rf build
-RUN mkdir build && ( cd build &&  source /opt/rh/gcc-toolset-9/enable && \
+RUN mkdir build && ( cd build &&  bash /setup-centos9.sh ) && rm -rf build
+RUN mkdir build && ( cd build &&  source /opt/rh/gcc-toolset-12/enable && \
     bash /setup-adapters.sh ) && rm -rf build

@@ -13,10 +13,10 @@
 # limitations under the License.
 # Build the test and build container for presto_cpp
 #
-FROM quay.io/centos/centos:stream8
+FROM quay.io/centos/centos:stream9
 
 ADD scripts /velox/scripts/
-RUN /velox/scripts/setup-centos8.sh
+RUN /velox/scripts/setup-centos9.sh
 
 WORKDIR /velox
 
