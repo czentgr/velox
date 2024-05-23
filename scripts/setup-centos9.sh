@@ -50,7 +50,7 @@ function install_build_prerequisites {
   dnf_install epel-release dnf-plugins-core # For ccache, ninja
   dnf config-manager --set-enabled crb
   dnf update -y
-  dnf_install ninja-build cmake curl ccache gcc-toolset-12 git wget which
+  dnf_install ninja-build cmake ccache gcc-toolset-12 git wget which
   dnf_install autoconf automake pip libtool
 }
 
