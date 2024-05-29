@@ -40,12 +40,12 @@ services:
     #   or
     #   docker-compose run -e NUM_THREADS=<NUMBER_OF_THREADS_TO_USE> --rm centos-cpp
     #   to set the number of threads used during compilation
-    image: ghcr.io/facebookincubator/velox-dev:centos8
+    image: ghcr.io/facebookincubator/velox-dev:centos9
     build:
       context: .
       dockerfile: scripts/centos.dockerfile
       args:
-        image: quay.io/centos/centos:stream8 
+        image: quay.io/centos/centos:stream9 
     environment:
       NUM_THREADS: 8 # default value for NUM_THREADS
       CCACHE_DIR: "/velox/.ccache"
