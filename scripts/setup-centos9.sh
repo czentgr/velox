@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This script documents setting up a Centos8 host for Velox
+# This script documents setting up a Centos9 host for Velox
 # development.  Running it should make you ready to compile.
 #
 # Environment variables:
@@ -22,7 +22,7 @@
 #     Use "n" to never wipe directories.
 #
 # You can also run individual functions below by specifying them as arguments:
-# $ scripts/setup-centos8.sh install_googletest install_fmt
+# $ scripts/setup-centos9.sh install_googletest install_fmt
 #
 
 set -efx -o pipefail
@@ -58,7 +58,8 @@ function install_build_prerequisites {
 function install_velox_deps_from_dnf {
   dnf_install libevent-devel \
     openssl-devel re2-devel libzstd-devel lz4-devel double-conversion-devel \
-    libdwarf-devel curl-devel libicu-devel bison flex libsodium-devel zlib-devel
+    libdwarf-devel elfutils-libelf-devel curl-devel libicu-devel bison flex \
+    libsodium-devel zlib-devel
 
   # install sphinx for doc gen
   pip install sphinx sphinx-tabs breathe sphinx_rtd_theme
@@ -187,8 +188,8 @@ function install_duckdb {
 
 function install_cuda {
   # See https://developer.nvidia.com/cuda-downloads
-  dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
-  yum install -y cuda-nvcc-$(echo $1 | tr '.' '-') cuda-cudart-devel-$(echo $1 | tr '.' '-')
+  dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+  dnf install -y cuda-nvcc-$(echo $1 | tr '.' '-') cuda-cudart-devel-$(echo $1 | tr '.' '-')
 }
 
 function install_velox_deps {
