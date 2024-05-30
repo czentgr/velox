@@ -52,6 +52,7 @@ function install_build_prerequisites {
   dnf update -y
   dnf_install ninja-build cmake ccache gcc-toolset-12 git wget which
   dnf_install autoconf automake pip libtool
+  pip install cmake==3.28.3
 }
 
 # Install dependencies from the package managers.
