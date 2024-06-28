@@ -22,13 +22,27 @@
 
 namespace facebook::velox {
 
+template <typename T, uint8_t kAlignment>
+class StdAlignedAllocator {
+ public:
+  T* allocate(size_t n) {
+    return reinterpret_cast<T*>(aligned_alloc(kAlignment, n));
+  }
+
+  void deallocate(T* data, /*unused */ size_t n) {
+    ::free(data);
+  }
+};
+
 /// Class template similar to std::vector with no default construction and a
 /// SIMD load worth of padding below and above the data. The idea is that one
 /// can access the data at full SIMD width at both ends.
-template <typename T>
+template <
+    typename T,
+    typename Allocator = StdAlignedAllocator<T, simd::kPadding>>
 class raw_vector {
  public:
-  raw_vector() {
+  raw_vector(Allocator allocator = {}) : allocator_(std::move(allocator)) {
     static_assert(std::is_trivially_destructible<T>::value);
   }
 
@@ -118,6 +132,7 @@ class raw_vector {
     }
     reserve(size);
     size_ = size;
+    allocatedSize_ = size;
   }
 
   void reserve(int32_t size) {
@@ -165,7 +180,7 @@ class raw_vector {
 
   T* allocateData(int32_t size, int32_t& capacity) {
     auto bytes = paddedSize(sizeof(T) * size);
-    auto ptr = reinterpret_cast<T*>(aligned_alloc(simd::kPadding, bytes));
+    auto ptr = allocator_.allocate(bytes);
     // Clear the word below the pointer so that we do not get read of
     // uninitialized when reading a partial word that extends below
     // the pointer.
@@ -177,7 +192,8 @@ class raw_vector {
 
   void freeData(T* data) {
     if (data_) {
-      ::free(addBytes(data, -simd::kPadding));
+      auto bytes = paddedSize(sizeof(T) * allocatedSize_);
+      allocator_.deallocate(addBytes(data, -simd::kPadding), bytes);
     }
   }
 
@@ -193,6 +209,8 @@ class raw_vector {
   T* data_{nullptr};
   int32_t size_{0};
   int32_t capacity_{0};
+  Allocator allocator_{};
+  int32_t allocatedSize_{0};
 };
 
 // Returns a pointer to 'size' int32_t's with consecutive values
