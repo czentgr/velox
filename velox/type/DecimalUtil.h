@@ -217,8 +217,20 @@ class DecimalUtil {
     if (!std::isfinite(value)) {
       return Status::UserError("The input value should be finite.");
     }
+    // Avoid casting during the comparison to the maxiumum integer value.
+    // The issue is that compiler reports
+    //   - implicit conversion from 'long' to 'double' changes value from
+    //     9223372036854775807 to 9223372036854775808
+    //   - implicit conversion from '__int128' to 'float' changes value from
+    //     170141183460469231731687303715884105727
+    //     to 1.70141183460469231731687E+38
+    // The idea is to cast the maximum value to the float or double and then
+    // compare the input value to the next lower float/double value to not
+    // exceed the integer maximum.
+    constexpr TInput maxAllowedValue =
+        static_cast<TInput>(std::numeric_limits<TOutput>::max());
     if (value <= std::numeric_limits<TOutput>::min() ||
-        value >= std::numeric_limits<TOutput>::max()) {
+        value >= nextafter(maxAllowedValue, 0)) {
       return Status::UserError("Result overflows.");
     }
 

@@ -206,6 +206,10 @@ if(${VELOX_FORCE_COLORED_OUTPUT})
   elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
          OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
     add_compile_options(-fcolor-diagnostics)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND "${CMAKE_CXX_COMPILER_VERSION}"
+                                              VERSION_GREATER_EQUAL 17)
+      set(CMAKE_EXE_LINKER_FLAGS "-latomic")
+    endif()
   endif()
 endif()
 

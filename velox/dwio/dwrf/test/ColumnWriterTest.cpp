@@ -841,15 +841,14 @@ void mapToStruct(
   }
 }
 
-template <typename TKEY, typename TVALUE>
+template <typename TKEY, typename TVALUE, bool useStruct = false>
 void testMapWriter(
     MemoryPool& pool,
     const std::vector<VectorPtr>& batches,
     bool useFlatMap,
     bool disableDictionaryEncoding,
     bool testEncoded,
-    bool printMaps = true,
-    bool useStruct = false) {
+    bool printMaps = true) {
   const auto rowType = CppToType<Row<Map<TKEY, TVALUE>>>::create();
   const auto dataType = rowType->childAt(0);
   const auto rowTypeWithId = TypeWithId::create(rowType);
@@ -866,7 +865,7 @@ void testMapWriter(
   std::vector<VectorPtr> structs;
   std::unordered_map<uint32_t, std::vector<std::string>> structReaderContext;
   if (useFlatMap) {
-    if (useStruct) {
+    if constexpr (useStruct) {
       structs = batches;
       pBatches = &structs;
       std::vector<TKEY> uniqueKeys;
@@ -1158,26 +1157,25 @@ TEST_F(ColumnWriterTest, TestMapWriterNestedRow) {
   testMapWriterRowImpl<Row<int32_t, bool, StringView>>();
 }
 
-template <typename TKEY, typename TVALUE>
+template <typename TKEY, typename TVALUE, bool useStruct = false>
 void testMapWriter(
     MemoryPool& pool,
     const VectorPtr& batch,
     bool useFlatMap,
-    bool printMaps = true,
-    bool useStruct = false) {
+    bool printMaps = true) {
   std::vector<VectorPtr> batches{batch, batch};
-  testMapWriter<TKEY, TVALUE>(
-      pool, batches, useFlatMap, true, false, printMaps, useStruct);
+  testMapWriter<TKEY, TVALUE, useStruct>(
+      pool, batches, useFlatMap, true, false, printMaps);
   if (useFlatMap) {
-    testMapWriter<TKEY, TVALUE>(
-        pool, batches, useFlatMap, false, false, printMaps, useStruct);
-    testMapWriter<TKEY, TVALUE>(
-        pool, batches, useFlatMap, true, true, printMaps, useStruct);
+    testMapWriter<TKEY, TVALUE, useStruct>(
+        pool, batches, useFlatMap, false, false, printMaps);
+    testMapWriter<TKEY, TVALUE, useStruct>(
+        pool, batches, useFlatMap, true, true, printMaps);
   }
 }
 
-template <typename T>
-void testMapWriterNumericKey(bool useFlatMap, bool useStruct = false) {
+template <typename T, bool useStruct = false>
+void testMapWriterNumericKey(bool useFlatMap) {
   using b = MapBuilder<T, T>;
 
   auto pool = memory::memoryManager()->addLeafPool();
@@ -1191,7 +1189,14 @@ void testMapWriterNumericKey(bool useFlatMap, bool useStruct = false) {
            typename b::pair{
                std::numeric_limits<T>::min(), std::numeric_limits<T>::min()}}});
 
-  testMapWriter<T, T>(*pool, batch, useFlatMap, true, useStruct);
+  testMapWriter<T, T, useStruct>(*pool, batch, useFlatMap, true);
+}
+
+// Workaround to avoid issues with two template arguments when wrapped in gtest
+// EXPECT macros.
+template <typename T>
+void testMapWriterNumericKeyUseStruct(bool useFlatMap) {
+  testMapWriterNumericKey<T, true>(useFlatMap);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterFloatKey) {
@@ -1203,8 +1208,8 @@ TEST_F(ColumnWriterTest, TestMapWriterFloatKey) {
 
   EXPECT_THROW(
       {
-        testMapWriterNumericKey<float>(
-            /* useFlatMap */ true, /* useStruct */ true);
+        testMapWriterNumericKeyUseStruct<float>(
+            /* useFlatMap */ true);
       },
       exception::LoggedException);
 }
@@ -1212,7 +1217,7 @@ TEST_F(ColumnWriterTest, TestMapWriterFloatKey) {
 TEST_F(ColumnWriterTest, TestMapWriterInt64Key) {
   testMapWriterNumericKey<int64_t>(/* useFlatMap */ false);
   testMapWriterNumericKey<int64_t>(/* useFlatMap */ true);
-  testMapWriterNumericKey<int64_t>(/* useFlatMap */ true, /* useStruct */ true);
+  testMapWriterNumericKey<int64_t, /* useStruct */ true>(/* useFlatMap */ true);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterDuplicatedInt64Key) {
@@ -1234,22 +1239,22 @@ TEST_F(ColumnWriterTest, TestMapWriterDuplicatedInt64Key) {
 TEST_F(ColumnWriterTest, TestMapWriterInt32Key) {
   testMapWriterNumericKey<int32_t>(/* useFlatMap */ false);
   testMapWriterNumericKey<int32_t>(/* useFlatMap */ true);
-  testMapWriterNumericKey<int32_t>(
-      /* useFlatMap */ true, /* useStruct */ true);
+  testMapWriterNumericKey<int32_t, /* useStruct */ true>(
+      /* useFlatMap */ true);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterInt16Key) {
   testMapWriterNumericKey<int16_t>(/* useFlatMap */ false);
   testMapWriterNumericKey<int16_t>(/* useFlatMap */ true);
-  testMapWriterNumericKey<int16_t>(
-      /* useFlatMap */ true, /* useStruct */ true);
+  testMapWriterNumericKey<int16_t, /* useStruct */ true>(
+      /* useFlatMap */ true);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterInt8Key) {
   testMapWriterNumericKey<int8_t>(/* useFlatMap */ false);
   testMapWriterNumericKey<int8_t>(/* useFlatMap */ true);
-  testMapWriterNumericKey<int8_t>(
-      /* useFlatMap */ true, /* useStruct */ true);
+  testMapWriterNumericKey<int8_t, /* useStruct */ true>(
+      /* useFlatMap */ true);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterStringKey) {
@@ -1265,8 +1270,8 @@ TEST_F(ColumnWriterTest, TestMapWriterStringKey) {
 
   testMapWriter<keyType, valueType>(*pool_, batch, /* useFlatMap */ false);
   testMapWriter<keyType, valueType>(*pool_, batch, /* useFlatMap */ true);
-  testMapWriter<keyType, valueType>(
-      *pool_, batch, /* useFlatMap */ true, true, /* useStruct */ true);
+  testMapWriter<keyType, valueType, /* useStruct */ true>(
+      *pool_, batch, /* useFlatMap */ true, true);
 }
 
 TEST_F(ColumnWriterTest, TestMapWriterDuplicatedStringKey) {
@@ -1362,8 +1367,8 @@ TEST_F(ColumnWriterTest, TestMapWriterBinaryKey) {
 
   testMapWriter<keyType, valueType>(*pool_, batch, /* useFlatMap */ false);
   testMapWriter<keyType, valueType>(*pool_, batch, /* useFlatMap */ true);
-  testMapWriter<keyType, valueType>(
-      *pool_, batch, /* useFlatMap */ true, true, /* useStruct */ true);
+  testMapWriter<keyType, valueType, /* useStruct */ true>(
+      *pool_, batch, /* useFlatMap */ true, true);
 }
 
 template <typename keyType, typename valueType>
@@ -4300,7 +4305,7 @@ TEST_F(ColumnWriterTest, ColumnIdInStream) {
   ASSERT_NE(streams.getStream(si, {}, false), nullptr);
 }
 
-template <typename T>
+template <typename T, bool isComplexTypeT>
 struct DictColumnWriterTestCase {
   DictColumnWriterTestCase(size_t size, bool writeDirect, const TypePtr& type)
       : size_(size), writeDirect_(writeDirect), type_(type) {}
@@ -4369,6 +4374,7 @@ struct DictColumnWriterTestCase {
    * Map)
    * @return
    */
+  template <bool isComplexRowType = false>
   VectorPtr createDictionaryBatch(
       size_t size,
       std::function<T(vector_size_t /*index*/)> valueAt,
@@ -4378,10 +4384,10 @@ struct DictColumnWriterTestCase {
     VectorPtr dictionaryVector;
 
     VectorPtr flatVector;
-    if (complexRowType == nullptr) {
-      flatVector = makeFlatVector(size, valueAt, isNullAt);
-    } else {
+    if constexpr (isComplexRowType) {
       flatVector = makeComplexVectors(complexRowType, size, isNullAt);
+    } else {
+      flatVector = makeFlatVector(size, valueAt, isNullAt);
     }
 
     auto wrappedVector = BaseVector::wrapInDictionary(
@@ -4401,13 +4407,18 @@ struct DictColumnWriterTestCase {
     context.initBuffer();
 
     // complexVectorType will be nullptr if the vector is not complex.
+    /*
     bool isComplexType = std::dynamic_pointer_cast<const RowType>(type_) ||
         std::dynamic_pointer_cast<const MapType>(type_) ||
         std::dynamic_pointer_cast<const ArrayType>(type_);
-
-    auto complexVectorType = isComplexType ? rowType : nullptr;
-    auto batch =
-        createDictionaryBatch(size_, valueAt, isNullAt, complexVectorType);
+    */
+    // auto complexVectorType = isComplexType ? rowType : nullptr;
+    VectorPtr batch;
+    if constexpr (isComplexTypeT) {
+      batch = createDictionaryBatch<true>(size_, valueAt, isNullAt, rowType);
+    } else {
+      batch = createDictionaryBatch<false>(size_, valueAt, isNullAt);
+    }
 
     const auto writer = BaseColumnWriter::create(context, *typeWithId);
 
@@ -4457,7 +4468,7 @@ std::function<bool(vector_size_t /*index*/)> randomNulls(int32_t n) {
       [n](vector_size_t /*index*/) { return folly::Random::rand32() % n == 0; };
 }
 
-template <typename T>
+template <typename T, bool isComplexTypeT = false>
 void testDictionary(
     const TypePtr& type,
     std::function<bool(vector_size_t)> isNullAt = nullptr,
@@ -4465,18 +4476,17 @@ void testDictionary(
   constexpr int32_t vectorSize = 200;
 
   // Tests for null/non null data with direct or dict write
-  DictColumnWriterTestCase<T>(vectorSize, true, type)
+  DictColumnWriterTestCase<T, isComplexTypeT>(vectorSize, true, type)
       .runTest(valueAt, isNullAt);
 
-  DictColumnWriterTestCase<T>(vectorSize, false, type)
+  DictColumnWriterTestCase<T, isComplexTypeT>(vectorSize, false, type)
       .runTest(valueAt, isNullAt);
 
   // Tests for non null data with direct or dict write
-  DictColumnWriterTestCase<T>(vectorSize, true, type).runTest(valueAt, [](int) {
-    return false;
-  });
+  DictColumnWriterTestCase<T, isComplexTypeT>(vectorSize, true, type)
+      .runTest(valueAt, [](int) { return false; });
 
-  DictColumnWriterTestCase<T>(vectorSize, false, type)
+  DictColumnWriterTestCase<T, isComplexTypeT>(vectorSize, false, type)
       .runTest(valueAt, [](int) { return false; });
 }
 
@@ -4520,27 +4530,28 @@ TEST_F(ColumnWriterTest, rowDictionary) {
   // randomly
 
   // Row tests
-  testDictionary<Row<int32_t>>(ROW({INTEGER()}), randomNulls(5));
+  testDictionary<Row<int32_t>, true>(ROW({INTEGER()}), randomNulls(5));
 
-  testDictionary<Row<StringView, int32_t>>(
+  testDictionary<Row<StringView, int32_t>, true>(
       ROW({VARCHAR(), INTEGER()}), randomNulls(11));
 
-  testDictionary<Row<Row<StringView, int32_t>>>(
+  testDictionary<Row<Row<StringView, int32_t>>, true>(
       ROW({ROW({VARCHAR(), INTEGER()})}), randomNulls(11));
 
-  testDictionary<Row<int32_t, double, StringView>>(
+  testDictionary<Row<int32_t, double, StringView>, true>(
       ROW({INTEGER(), DOUBLE(), VARCHAR()}), randomNulls(5));
 
-  testDictionary<Row<int32_t, StringView, double, StringView>>(
+  testDictionary<Row<int32_t, StringView, double, StringView>, true>(
       ROW({INTEGER(), VARCHAR(), DOUBLE(), VARCHAR()}), randomNulls(5));
 
-  testDictionary<Row<Array<StringView>, StringView>>(
+  testDictionary<Row<Array<StringView>, StringView>, true>(
       ROW({ARRAY(VARCHAR()), VARCHAR()}), randomNulls(11));
 
   testDictionary<
       Row<Map<int32_t, double>,
           Array<Map<int32_t, Row<int32_t, double>>>,
-          Row<int32_t, StringView>>>(
+          Row<int32_t, StringView>>,
+      true>(
       ROW(
           {MAP(INTEGER(), DOUBLE()),
            ARRAY(MAP(INTEGER(), ROW({INTEGER(), DOUBLE()}))),
@@ -4550,17 +4561,19 @@ TEST_F(ColumnWriterTest, rowDictionary) {
 
 TEST_F(ColumnWriterTest, arrayDictionary) {
   // Array tests
-  testDictionary<Array<float>>(ARRAY(REAL()), randomNulls(7));
+  testDictionary<Array<float>, true>(ARRAY(REAL()), randomNulls(7));
 
   testDictionary<
-      Row<Array<int32_t>, Row<StringView, Array<Map<StringView, StringView>>>>>(
+      Row<Array<int32_t>, Row<StringView, Array<Map<StringView, StringView>>>>,
+      true>(
       ROW(
           {ARRAY(INTEGER()),
            ROW({VARCHAR(), ARRAY(MAP(VARCHAR(), VARCHAR()))})}),
       randomNulls(11));
 
   testDictionary<
-      Array<Map<int32_t, Array<Map<int8_t, Row<StringView, Array<double>>>>>>>(
+      Array<Map<int32_t, Array<Map<int8_t, Row<StringView, Array<double>>>>>>,
+      true>(
       ARRAY(MAP(
           INTEGER(), ARRAY(MAP(TINYINT(), ROW({VARCHAR(), ARRAY(DOUBLE())}))))),
       randomNulls(7));
@@ -4568,20 +4581,21 @@ TEST_F(ColumnWriterTest, arrayDictionary) {
 
 TEST_F(ColumnWriterTest, mapDictionary) {
   // Map tests
-  testDictionary<Map<int32_t, double>>(
+  testDictionary<Map<int32_t, double>, true>(
       MAP(INTEGER(), DOUBLE()), randomNulls(7));
 
-  testDictionary<Map<StringView, StringView>>(
+  testDictionary<Map<StringView, StringView>, true>(
       MAP(VARCHAR(), VARCHAR()), randomNulls(13));
 
   testDictionary<
       Map<StringView,
-          Map<int32_t, Array<Row<int32_t, int32_t, Array<double>>>>>>(
+          Map<int32_t, Array<Row<int32_t, int32_t, Array<double>>>>>,
+      true>(
       MAP(VARCHAR(),
           MAP(INTEGER(), ARRAY(ROW({INTEGER(), INTEGER(), ARRAY(DOUBLE())})))),
       randomNulls(9));
 
-  testDictionary<Map<int32_t, Map<StringView, Map<StringView, int8_t>>>>(
+  testDictionary<Map<int32_t, Map<StringView, Map<StringView, int8_t>>>, true>(
       MAP(INTEGER(), MAP(VARCHAR(), MAP(VARCHAR(), TINYINT()))),
       randomNulls(3));
 }

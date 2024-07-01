@@ -62,6 +62,11 @@ ifdef CUDA_FLAGS
 CMAKE_FLAGS += -DCMAKE_CUDA_FLAGS="$(CUDA_FLAGS)"
 endif
 
+# Prefer using clang, if available, over default gcc
+ifneq (, $(shell which clang))
+CMAKE_FLAGS += -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+endif
+
 # Use Ninja if available. If Ninja is used, pass through parallelism control flags.
 USE_NINJA ?= 1
 ifeq ($(USE_NINJA), 1)

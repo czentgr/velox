@@ -52,6 +52,8 @@ function install_build_prerequisites {
   dnf update -y
   dnf_install ninja-build cmake ccache gcc-toolset-12 git wget which
   dnf_install autoconf automake python3-devel pip libtool
+  # For clang
+  dnf_install clang gcc-toolset-13-libatomic-devel
   pip install cmake==3.28.3
 }
 
