@@ -151,6 +151,11 @@ std::vector<std::unique_ptr<SerializedPageBase>> ExchangeClient::next(
   ContinuePromise stalePromise = ContinuePromise::makeEmpty();
   {
     std::lock_guard<std::mutex> l(queue_->mutex());
+
+    if (!future) {
+      VLOG(1) << "Ying: ExchangeClient::next future is null";
+    }
+
     if (closed_) {
       *atEnd = true;
       return pages;
@@ -181,6 +186,8 @@ std::vector<std::unique_ptr<SerializedPageBase>> ExchangeClient::next(
 void ExchangeClient::request(std::vector<RequestSpec>&& requestSpecs) {
   auto self = shared_from_this();
   for (auto& spec : requestSpecs) {
+//    VLOG(1) << " ExchangeClient::request " << spec.toString();
+
     auto future = folly::SemiFuture<ExchangeSource::Response>::makeEmpty();
     if (spec.maxBytes == 0) {
       future = spec.source->requestDataSizes(kRequestDataSizesMaxWaitSec_);

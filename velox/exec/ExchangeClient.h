@@ -129,6 +129,13 @@ class ExchangeClient : public std::enable_shared_from_this<ExchangeClient> {
     // How much bytes to request from this source.  0 bytes means request data
     // sizes only.
     int64_t maxBytes;
+
+    std::string toString() {
+      std::stringstream out;
+      out << "RequestSpec[source:" << source->toString()
+          << ", maxBytes:" << maxBytes << "]";
+      return out.str();
+    }
   };
 
   struct ProducingSource {

@@ -223,6 +223,10 @@ class MergeExchangeSource : public MergeSource {
   }
 
   BlockingReason next(RowVectorPtr& data, ContinueFuture* future) override {
+    if (!future) {
+      VLOG(1) << "Ying: MergeExchangeSource::next future is null";
+    }
+
     data.reset();
 
     if (atEnd_ && !currentPage_) {

@@ -500,7 +500,8 @@ void Operator::recordSpillStats() {
 
 std::string Operator::toString() const {
   std::stringstream out;
-  out << operatorType() << "[" << planNodeId() << "] " << operatorId();
+  out << operatorType() << "[" << planNodeId() << "] " << operatorId()
+      << " noMoreInput_: " << noMoreInput_;
   return out.str();
 }
 

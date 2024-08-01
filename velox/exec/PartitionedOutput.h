@@ -250,6 +250,8 @@ class PartitionedOutput : public Operator {
   std::vector<uint32_t> partitions_;
   std::vector<DecodedVector> decodedVectors_;
   Scratch scratch_;
+
+  uint64_t numReceivedPages{0};
 };
 
 } // namespace facebook::velox::exec

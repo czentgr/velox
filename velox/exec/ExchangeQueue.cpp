@@ -112,12 +112,15 @@ std::vector<std::unique_ptr<SerializedPageBase>> ExchangeQueue::dequeueLocked(
     bool* atEnd,
     ContinueFuture* future,
     ContinuePromise* stalePromise) {
+  if (!future) {
+    VLOG(1) << "Ying: ExchangeQueue::dequeueLocked future is null";
+  }
   VELOX_CHECK_NOT_NULL(future);
   TestValue::adjust(
       "facebook::velox::exec::ExchangeQueue::dequeueLocked", this);
   if (!error_.empty()) {
     *atEnd = true;
-    VELOX_FAIL(error_);
+    VELOX_FAIL(error_, "ExchangeQueue::dequeueLocked error_:", error_);
   }
 
   *atEnd = false;
@@ -151,7 +154,9 @@ std::vector<std::unique_ptr<SerializedPageBase>> ExchangeQueue::dequeueLocked(
     totalBytes_ -= pages.back()->size();
   }
 
-  VELOX_UNREACHABLE();
+  VLOG(1) << "Ying: ExchangeQueue::dequeueLocked VELOX_UNREACHABLE";
+
+  VELOX_UNREACHABLE("ExchangeQueue::dequeueLocked VELOX_UNREACHABLE");
 }
 
 void ExchangeQueue::setError(const std::string& error) {
