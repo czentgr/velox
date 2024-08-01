@@ -17,6 +17,8 @@
 
 #include "velox/exec/OutputBuffer.h"
 
+#include <folly/concurrency/ConcurrentHashMap.h>
+
 namespace facebook::velox::exec {
 
 class OutputBufferManager {
@@ -136,9 +138,11 @@ class OutputBufferManager {
   std::shared_ptr<OutputBuffer> getBuffer(const std::string& taskId);
 
   folly::Synchronized<
-      std::unordered_map<std::string, std::shared_ptr<OutputBuffer>>,
-      std::mutex>
+      std::unordered_map<std::string, std::shared_ptr<OutputBuffer>>>
       buffers_;
+
+//  folly::ConcurrentHashMap<std::string, std::shared_ptr<OutputBuffer>>
+//      buffers_;
 
   std::function<std::unique_ptr<OutputStreamListener>()> listenerFactory_{
       nullptr};
