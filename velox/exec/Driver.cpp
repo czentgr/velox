@@ -482,6 +482,7 @@ StopReason Driver::runInternal(
     std::shared_ptr<Driver>& self,
     std::shared_ptr<BlockingState>& blockingState,
     RowVectorPtr& result) {
+  VLOG(3) << this << this->toString() << " Driver::runInternal begin. ";
   const auto now = getCurrentTimeMicro();
   const auto queuedTimeUs = now - queueTimeStartUs_;
   // Update the next operator's queueTime.
@@ -594,6 +595,10 @@ StopReason Driver::runInternal(
               nextOp,
               curOperatorId_ + 1,
               kOpMethodNeedsInput);
+          VLOG(3) << this
+                  << " Driver::runInternal 3 called needsInput on nextOp: "
+                  << nextOp->toString() << " needsInput: " << needsInput;
+
           if (needsInput) {
             uint64_t resultBytes = 0;
             RowVectorPtr intermediateResult;
@@ -698,6 +703,9 @@ StopReason Driver::runInternal(
                 op,
                 curOperatorId_,
                 kOpMethodGetOutput);
+            VLOG(3) << this << " Driver::runInternal called getOutput on op: "
+                    << op->toString() << " result: " << result;
+
             if (result) {
               validateOperatorOutputResult(result, *op);
 
@@ -967,7 +975,7 @@ std::vector<Operator*> Driver::operators() const {
 std::string Driver::toString() const {
   std::stringstream out;
   out << "{Driver." << driverCtx()->pipelineId << "." << driverCtx()->driverId
-      << ": ";
+      << ", taskId: " << driverCtx()->task->taskId();
   if (state_.isTerminated) {
     out << "terminated, ";
   }

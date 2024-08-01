@@ -34,26 +34,33 @@ std::weak_ptr<OutputBufferManager> OutputBufferManager::getInstance() {
   return instance_;
 }
 
+// TODO: Avoid this lookup
 std::shared_ptr<OutputBuffer> OutputBufferManager::getBuffer(
     const std::string& taskId) {
-  return buffers_.withLock([&](auto& buffers) {
+  return buffers_.withRLock([&](auto& buffers) {
+//    VLOG(1) << "OutputBufferManager::getBuffer " << this << " ["
+//            << this->toString() << "]";
     auto it = buffers.find(taskId);
+//    if (it == buffers.end()) {
+//      VLOG(1) << taskId << " not found\n";
+//    }
     VELOX_CHECK(
         it != buffers.end(), "Output buffers for task not found: {}", taskId);
     return it->second;
   });
 }
 
+// TODO: Avoid this lookup
 std::shared_ptr<OutputBuffer> OutputBufferManager::getBufferIfExists(
     const std::string& taskId) {
-  return buffers_.withLock([&](auto& buffers) {
+  return buffers_.withRLock([&](auto& buffers) {
     auto it = buffers.find(taskId);
     return it == buffers.end() ? nullptr : it->second;
   });
 }
 
 uint64_t OutputBufferManager::numBuffers() const {
-  return buffers_.lock()->size();
+  return buffers_.rlock()->size();
 }
 
 bool OutputBufferManager::enqueue(
@@ -76,20 +83,35 @@ void OutputBufferManager::acknowledge(
     const std::string& taskId,
     int destination,
     int64_t sequence) {
-  auto buffer =
-      buffers_.withLock([&](auto& buffers) -> std::shared_ptr<OutputBuffer> {
-        auto it = buffers.find(taskId);
-        if (it == buffers.end()) {
-          VLOG(1) << "Receiving ack for non-existent task " << taskId
-                  << " destination " << destination << " sequence " << sequence;
-          return nullptr;
-        }
-        return it->second;
-      });
+  auto buffer = getBufferIfExists(taskId);
   if (buffer) {
     buffer->acknowledge(destination, sequence);
+  } else {
+    // The buffer for this task might have finished and removed
+    VLOG(1) << "Receiving ack for non-existent task " << taskId
+            << " destination " << destination << " sequence " << sequence;
   }
 }
+
+// void OutputBufferManager::acknowledge(
+//     const std::string& taskId,
+//     int destination,
+//     int64_t sequence) {
+//   auto buffer =
+//       buffers_.withLock([&](auto& buffers) -> std::shared_ptr<OutputBuffer> {
+//         auto it = buffers.find(taskId);
+//         if (it == buffers.end()) {
+//           VLOG(1) << "Receiving ack for non-existent task " << taskId
+//                   << " destination " << destination << " sequence " <<
+//                   sequence;
+//           return nullptr;
+//         }
+//         return it->second;
+//       });
+//   if (buffer) {
+//     buffer->acknowledge(destination, sequence);
+//   }
+// }
 
 void OutputBufferManager::deleteResults(
     const std::string& taskId,
@@ -120,9 +142,10 @@ void OutputBufferManager::initializeTask(
     int numDrivers) {
   const auto& taskId = task->taskId();
 
-  buffers_.withLock([&](auto& buffers) {
+  buffers_.withWLock([&](auto& buffers) {
     auto it = buffers.find(taskId);
     if (it == buffers.end()) {
+//      VLOG(1) << "OutputBufferManager::initializeTask adding task " << taskId;
       buffers[taskId] = std::make_shared<OutputBuffer>(
           std::move(task), kind, numDestinations, numDrivers);
     } else {
@@ -131,6 +154,24 @@ void OutputBufferManager::initializeTask(
     }
   });
 }
+
+// void OutputBufferManager::initializeTask(
+//     std::shared_ptr<Task> task,
+//     core::PartitionedOutputNode::Kind kind,
+//     int numDestinations,
+//     int numDrivers) {
+//   const auto& taskId = task->taskId();
+//
+//   auto insertResult = buffers_.insert(
+//       taskId,
+//       std::make_shared<OutputBuffer>(
+//           std::move(task), kind, numDestinations, numDrivers));
+//
+//   if (!insertResult.second) {
+//     VELOX_FAIL(
+//         "Registering an output buffer for pre-existing taskId {}", taskId);
+//   }
+// }
 
 bool OutputBufferManager::updateOutputBuffers(
     const std::string& taskId,
@@ -155,7 +196,7 @@ bool OutputBufferManager::updateNumDrivers(
 
 void OutputBufferManager::removeTask(const std::string& taskId) {
   auto buffer =
-      buffers_.withLock([&](auto& buffers) -> std::shared_ptr<OutputBuffer> {
+      buffers_.withWLock([&](auto& buffers) -> std::shared_ptr<OutputBuffer> {
         auto it = buffers.find(taskId);
         if (it == buffers.end()) {
           // Already removed.
@@ -163,15 +204,34 @@ void OutputBufferManager::removeTask(const std::string& taskId) {
         }
         auto taskBuffer = it->second;
         buffers.erase(taskId);
+//        VLOG(1) << "OutputBufferManager::removeTask removing task " << taskId;
         return taskBuffer;
       });
   if (buffer != nullptr) {
     buffer->terminate();
   }
 }
+//
+// void OutputBufferManager::removeTask(const std::string& taskId) {
+//  auto it = buffers_.find(taskId);
+//  if (it != buffers_.end()) {
+//    it->second->terminate();
+//    buffers_.erase(it);
+//  }
+//}
+
+// std::string OutputBufferManager::toString() {
+//   std::stringstream out;
+//   out << "[BufferManager:" << std::endl;
+//   for (const auto& pair : buffers_) {
+//     out << pair.first << ": " << pair.second->toString() << std::endl;
+//   }
+//   out << "]";
+//   return out.str();
+// }
 
 std::string OutputBufferManager::toString() {
-  return buffers_.withLock([](const auto& buffers) {
+  return buffers_.withRLock([](const auto& buffers) {
     std::stringstream out;
     out << "[BufferManager:" << std::endl;
     for (const auto& pair : buffers) {
