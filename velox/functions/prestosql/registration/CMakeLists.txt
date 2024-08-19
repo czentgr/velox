@@ -31,7 +31,8 @@ velox_add_library(
   ProbabilityTrigonometricFunctionsRegistration.cpp
   RegistrationFunctions.cpp
   StringFunctionsRegistration.cpp
-  URLFunctionsRegistration.cpp)
+  URLFunctionsRegistration.cpp
+  GeometryFunctionsRegistration.cpp)
 
 # GCC 12 has a bug where it does not respect "pragma ignore" directives and ends
 # up failing compilation in an openssl header included by a hash-related

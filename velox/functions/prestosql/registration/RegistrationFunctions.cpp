@@ -38,6 +38,7 @@ extern void registerMapAllowingDuplicates(
     const std::string& name,
     const std::string& prefix);
 extern void registerInternalArrayFunctions();
+extern void registerGeometryFunctions(const std::string& prefix);
 
 namespace prestosql {
 void registerArithmeticFunctions(const std::string& prefix) {
@@ -94,6 +95,10 @@ void registerBitwiseFunctions(const std::string& prefix) {
   functions::registerBitwiseFunctions(prefix);
 }
 
+void registerGeometryFunctions(const std::string& prefix) {
+  functions::registerGeometryFunctions(prefix);
+}
+
 void registerAllScalarFunctions(const std::string& prefix) {
   registerArithmeticFunctions(prefix);
   registerCheckedArithmeticFunctions(prefix);
@@ -110,6 +115,7 @@ void registerAllScalarFunctions(const std::string& prefix) {
   registerBitwiseFunctions(prefix);
   registerUuidFunctions(prefix);
   registerIPAddressFunctions(prefix);
+  registerGeometryFunctions(prefix);
 }
 
 void registerMapAllowingDuplicates(

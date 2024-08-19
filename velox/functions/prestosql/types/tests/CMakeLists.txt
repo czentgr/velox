@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+find_package(GDAL REQUIRED)
 add_executable(
   velox_presto_types_test
   HyperLogLogTypeTest.cpp
@@ -20,7 +20,8 @@ add_executable(
   TypeTestBase.cpp
   UuidTypeTest.cpp
   IPAddressTypeTest.cpp
-  IPPrefixTypeTest.cpp)
+  IPPrefixTypeTest.cpp
+  GeometryTypeTest.cpp)
 
 add_test(velox_presto_types_test velox_presto_types_test)
 
@@ -32,4 +33,5 @@ target_link_libraries(
   GTest::gtest_main
   GTest::gmock
   gflags::gflags
-  glog::glog)
+  glog::glog
+  ${GDAL_LIBRARIES})

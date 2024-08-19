@@ -15,6 +15,16 @@ add_subdirectory(json)
 add_subdirectory(types)
 add_subdirectory(window)
 
+
+# Find and include GDAL
+find_package(GDAL REQUIRED)
+if(GDAL_FOUND)
+  message(STATUS "GDAL found: ${GDAL_VERSION}")
+  include_directories(${GDAL_INCLUDE_DIRS})
+else()
+  message(FATAL_ERROR "GDAL not found. Please install GDAL.")
+endif()
+
 velox_add_library(
   velox_functions_prestosql_impl
   ArrayConstructor.cpp
@@ -72,7 +82,8 @@ velox_link_libraries(
   velox_presto_types
   velox_functions_util
   Folly::folly
-  stemmer::stemmer)
+  stemmer::stemmer
+  ${GDAL_LIBRARIES})
 
 if(NOT VELOX_MONO_LIBRARY)
   set_property(TARGET velox_functions_prestosql_impl PROPERTY JOB_POOL_COMPILE
