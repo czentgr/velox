@@ -29,7 +29,7 @@ namespace facebook::velox::exec {
 using DataAvailableCallback = std::function<void(
     std::vector<std::unique_ptr<folly::IOBuf>> pages,
     int64_t sequence,
-    std::vector<int64_t> remainingBytes)>;
+    int64_t remainingBytes)>;
 
 /// Callback provided to indicate if the consumer of a destination buffer is
 /// currently active or not. It is used by arbitrary output buffer to optimize
@@ -107,12 +107,14 @@ class ArbitraryBuffer {
   std::vector<std::shared_ptr<SerializedPageBase>> getPages(uint64_t maxBytes);
 
   /// Append the available page sizes to `out'.
-  void getAvailablePageSizes(std::vector<int64_t>& out) const;
+  //  void bytesBuffered(std::vector<int64_t>& out) const;
+  int64_t bytesBuffered() const;
 
   std::string toString() const;
 
  private:
   folly::Synchronized<std::deque<std::shared_ptr<SerializedPageBase>>> pages_;
+  std::atomic<int64_t> bytesBuffered_{0};
   //  std::deque<std::shared_ptr<SerializedPageBase>> pages_;
   //  std::shared_mutex sharedMutex_;
 };
@@ -174,18 +176,18 @@ class DestinationBuffer {
   //  void loadData(ArbitraryBuffer* buffer, uint64_t maxBytes);
   void addPages(const std::vector<std::shared_ptr<SerializedPageBase>>& newPages);
 
-  //  struct Data {
-  //    /// The actual data available at this buffer.
-  //    std::vector<std::unique_ptr<folly::IOBuf>> data;
+  //    struct Data {
+  //      /// The actual data available at this buffer.
+  //      std::vector<std::unique_ptr<folly::IOBuf>> data;
   //
-  //    /// The byte sizes of pages that can be fetched.
-  //    std::vector<int64_t> remainingBytes;
+  //      /// The byte sizes of pages that can be fetched.
+  //      std::vector<int64_t> remainingBytes;
   //
-  //    /// Whether the result is returned immediately without invoking the
-  //    `notify'
-  //    /// callback.
-  //    bool immediate{false};
-  //  };
+  //      /// Whether the result is returned immediately without invoking the
+  //      `notify'
+  //      /// callback.
+  //      bool immediate;
+  //    };
 
   /// Returns a shallow copy (folly::IOBuf::clone) of the data starting at
   /// 'sequence', stopping after exceeding 'maxBytes'. If there is no data,
@@ -231,13 +233,12 @@ class DestinationBuffer {
       DataConsumerActiveCheckCallback activeCheck,
       const ArbitraryBuffer* arbitraryBuffer);
 
-  void processReadLocked(
+  int64_t processReadLocked(
       const std::vector<std::shared_ptr<SerializedPageBase>>& data,
       uint64_t maxBytes,
       int64_t sequence,
       const ArbitraryBuffer* arbitraryBuffer,
-      std::vector<std::unique_ptr<folly::IOBuf>>& retrievedData,
-      std::vector<int64_t>& remainingBytes);
+      std::vector<std::unique_ptr<folly::IOBuf>>& retrievedData);
 
   bool validateSequenceNumberLocked(const int64_t sequence, bool fromGetData);
 

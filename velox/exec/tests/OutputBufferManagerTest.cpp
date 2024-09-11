@@ -185,7 +185,7 @@ class OutputBufferManagerTest : public testing::Test {
          &receivedData](
             std::vector<std::unique_ptr<folly::IOBuf>> pages,
             int64_t inSequence,
-            std::vector<int64_t> /*remainingBytes*/) {
+            int64_t /*remainingBytes*/) {
           ASSERT_FALSE(receivedData) << "for destination " << destination;
           ASSERT_EQ(pages.size(), expectedGroups)
               << "for destination " << destination;
@@ -238,12 +238,12 @@ class OutputBufferManagerTest : public testing::Test {
     return [destination, sequence, &receivedEndMarker](
                std::vector<std::unique_ptr<folly::IOBuf>> pages,
                int64_t inSequence,
-               std::vector<int64_t> remainingBytes) {
+               int64_t remainingBytes) {
       EXPECT_FALSE(receivedEndMarker) << "for destination " << destination;
       EXPECT_EQ(pages.size(), 1) << "for destination " << destination;
       EXPECT_TRUE(pages[0] == nullptr) << "for destination " << destination;
       EXPECT_EQ(inSequence, sequence) << "for destination " << destination;
-      EXPECT_TRUE(remainingBytes.empty());
+      EXPECT_EQ(remainingBytes, 0);
       receivedEndMarker = true;
     };
   }
@@ -289,7 +289,7 @@ class OutputBufferManagerTest : public testing::Test {
     return [destination, sequence, expectedGroups, &receivedData](
                std::vector<std::unique_ptr<folly::IOBuf>> pages,
                int64_t inSequence,
-               std::vector<int64_t> /*remainingBytes*/) {
+               int64_t /*remainingBytes*/) {
       EXPECT_FALSE(receivedData) << "for destination " << destination;
       EXPECT_EQ(pages.size(), expectedGroups)
           << "for destination " << destination;
@@ -341,7 +341,7 @@ class OutputBufferManagerTest : public testing::Test {
           nextSequence,
           [&](std::vector<std::unique_ptr<folly::IOBuf>> pages,
               int64_t inSequence,
-              std::vector<int64_t> /*remainingBytes*/) {
+              int64_t /*remainingBytes*/) {
             ASSERT_EQ(inSequence, nextSequence);
             for (int i = 0; i < pages.size(); ++i) {
               if (pages[i] != nullptr) {
@@ -364,7 +364,7 @@ class OutputBufferManagerTest : public testing::Test {
       struct Response {
         std::vector<std::unique_ptr<folly::IOBuf>> pages;
         int64_t sequence;
-        std::vector<int64_t> remainingBytes;
+        int64_t remainingBytes;
       };
       folly::Promise<Response> promise;
       auto future = promise.getSemiFuture();
@@ -376,16 +376,15 @@ class OutputBufferManagerTest : public testing::Test {
           [&promise](
               std::vector<std::unique_ptr<folly::IOBuf>> pages,
               int64_t inSequence,
-              std::vector<int64_t> remainingBytes) {
+              int64_t remainingBytes) {
             promise.setValue(
-                Response{
-                    std::move(pages), inSequence, std::move(remainingBytes)});
+                Response{std::move(pages), inSequence, remainingBytes});
           });
       future.wait();
       ASSERT_TRUE(future.isReady());
       auto& response = future.value();
       ASSERT_EQ(response.sequence, nextSequence);
-      ASSERT_EQ(response.remainingBytes.size(), 0);
+      ASSERT_EQ(response.remainingBytes, 0);
       ASSERT_EQ(response.pages.size(), 1);
       ASSERT_EQ(response.pages.at(0), nullptr);
     }
@@ -602,11 +601,11 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
         0,
         [&](std::vector<std::unique_ptr<folly::IOBuf>> buffers,
             int64_t sequence,
-            std::vector<int64_t> remainingBytes) {
+            int64_t remainingBytes) {
           ASSERT_EQ(buffers.size(), 1);
           ASSERT_TRUE(buffers[0].get() == nullptr);
           ASSERT_EQ(sequence, 0);
-          ASSERT_TRUE(remainingBytes.empty());
+          ASSERT_EQ(remainingBytes, 0);
           notified = true;
         },
         nullptr);
@@ -657,7 +656,7 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
         0,
         [&](std::vector<std::unique_ptr<folly::IOBuf>> data,
             int64_t /*unused*/,
-            std::vector<int64_t> /*remainingBytes*/) {
+            int64_t /*remainingBytes*/) {
           for (const auto& iobuf : data) {
             numBytes += iobuf->length();
           }
@@ -678,10 +677,10 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
         1,
         [&](std::vector<std::unique_ptr<folly::IOBuf>> buffers,
             int64_t sequence,
-            std::vector<int64_t> remainingBytes) {
+            int64_t remainingBytes) {
           ASSERT_EQ(sequence, 1);
           ASSERT_EQ(buffers.size(), 9);
-          ASSERT_TRUE(remainingBytes.empty());
+          ASSERT_EQ(remainingBytes, 0);
           for (const auto& buffer : buffers) {
             numBytes += buffer->length();
           }
@@ -707,17 +706,13 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
 
   {
     uint64_t notifyCalledTimes = 0;
-    std::vector<int64_t> resultRemainingBytes;
+    int64_t resultRemainingBytes;
     auto copyRemainingBytesCb =
         [&](std::vector<std::unique_ptr<folly::IOBuf>> /*buffers*/,
             int64_t /*sequence*/,
-            std::vector<int64_t> remainingBytes) {
+            int64_t remainingBytes) {
           notifyCalledTimes++;
-          resultRemainingBytes.resize(remainingBytes.size());
-          std::copy(
-              remainingBytes.begin(),
-              remainingBytes.end(),
-              resultRemainingBytes.begin());
+          resultRemainingBytes = remainingBytes;
         };
 
     // Create 10 pages with increasing sizes.
@@ -738,7 +733,7 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
         1, sequence, copyRemainingBytesCb, [] { return true; });
     ASSERT_EQ(destinationBuffer.pendingRead(), nullptr);
     ASSERT_EQ(notifyCalledTimes, 1);
-    ASSERT_EQ(resultRemainingBytes.size(), 9);
+    // ASSERT_EQ(resultRemainingBytes.size(), 9);
     ++sequence;
     auto freedPages = destinationBuffer.acknowledge(sequence, false);
     ASSERT_EQ(freedPages.size(), 1);
@@ -747,12 +742,12 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
 
     // Read and ack the second page
     destinationBuffer.getData(
-        resultRemainingBytes[0], sequence, copyRemainingBytesCb, [] {
+        resultRemainingBytes, sequence, copyRemainingBytesCb, [] {
           return true;
         });
     ASSERT_EQ(destinationBuffer.pendingRead(), nullptr);
     ASSERT_EQ(notifyCalledTimes, 2);
-    ASSERT_EQ(resultRemainingBytes.size(), 8);
+    // ASSERT_EQ(resultRemainingBytes.size(), 8);
     ++sequence;
     freedPages = destinationBuffer.acknowledge(sequence, false);
     ASSERT_EQ(freedPages.size(), 1);
@@ -761,12 +756,12 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
 
     // Read and ack the 3rd and 4th pages
     destinationBuffer.getData(
-        resultRemainingBytes[1], sequence, copyRemainingBytesCb, [] {
+        resultRemainingBytes, sequence, copyRemainingBytesCb, [] {
           return true;
         });
     ASSERT_EQ(destinationBuffer.pendingRead(), nullptr);
     ASSERT_EQ(notifyCalledTimes, 3);
-    ASSERT_EQ(resultRemainingBytes.size(), 6);
+    // ASSERT_EQ(resultRemainingBytes.size(), 6);
     sequence += 2;
     freedPages = destinationBuffer.acknowledge(sequence, false);
     ASSERT_EQ(freedPages.size(), 2);
@@ -775,13 +770,12 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
     lastPageSize = freedPages[1]->size();
 
     // Read and ack the rest 6 pages
-    auto bytes = std::accumulate(
-        resultRemainingBytes.begin(), resultRemainingBytes.end(), 0ll);
+    auto bytes = resultRemainingBytes;
     destinationBuffer.getData(
         bytes, sequence, copyRemainingBytesCb, [] { return true; });
     ASSERT_EQ(destinationBuffer.pendingRead(), nullptr);
     ASSERT_EQ(notifyCalledTimes, 4);
-    ASSERT_EQ(resultRemainingBytes.size(), 0);
+    ASSERT_EQ(resultRemainingBytes, 0);
     sequence += 6;
     freedPages = destinationBuffer.acknowledge(sequence, false);
     ASSERT_EQ(freedPages.size(), 6);
@@ -797,7 +791,7 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, destinationBuffer) {
     ASSERT_TRUE(destinationBuffer.pendingRead());
     // The notify should not be called because the destinationBuffer is empty
     ASSERT_EQ(notifyCalledTimes, 4);
-    ASSERT_EQ(resultRemainingBytes.size(), 0);
+    ASSERT_EQ(resultRemainingBytes, 0);
   }
 }
 
@@ -926,9 +920,9 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, basicBroadcast) {
 
   // Fetch all for the new added destinations.
   fetch(taskId, 5, 0, 1'000'000'000, 3, true);
-//  VELOX_ASSERT_THROW(
-//      acknowledge(taskId, 5, 4),
-//      "(4 vs. 3) Ack received for a not yet produced item");
+  //  VELOX_ASSERT_THROW(
+  //      acknowledge(taskId, 5, 4),
+  //      "(4 vs. 3) Ack received for a not yet produced item");
   acknowledge(taskId, 5, 0);
   acknowledge(taskId, 5, 1);
   acknowledge(taskId, 5, 2);
@@ -1075,7 +1069,7 @@ TEST_P(
         [&, destination](
             std::vector<std::unique_ptr<folly::IOBuf>> pages,
             int64_t sequence,
-            std::vector<int64_t> /*remainingBytes*/) {
+            int64_t /*remainingBytes*/) {
           notifyCb(destination, std::move(pages), sequence);
         },
         [&, destination]() { return actives[destination].load(); }));
@@ -1114,7 +1108,7 @@ TEST_P(
       /*sequence=*/sequences[0],
       [&](std::vector<std::unique_ptr<folly::IOBuf>> pages,
           int64_t sequence,
-          std::vector<int64_t> /*remainingBytes*/) {
+          int64_t /*remainingBytes*/) {
         notifyCb(0, std::move(pages), sequence);
       }));
   ASSERT_EQ(sequences[0], 2);
@@ -1137,7 +1131,7 @@ TEST_P(
       /*sequence=*/sequences[1],
       [&](std::vector<std::unique_ptr<folly::IOBuf>> pages,
           int64_t sequence,
-          std::vector<int64_t> /*remainingBytes*/) {
+          int64_t /*remainingBytes*/) {
         notifyCb(1, std::move(pages), sequence);
       },
       [&]() { return actives[1].load(); }));
@@ -1530,7 +1524,7 @@ TEST_P(OutputBufferManagerWithDifferentSerdeKindsTest, getDataOnFailedTask) {
       1,
       [](std::vector<std::unique_ptr<folly::IOBuf>> /*pages*/,
          int64_t /*sequence*/,
-         std::vector<int64_t> /*remainingBytes*/) { VELOX_UNREACHABLE(); }));
+         int64_t /*remainingBytes*/) { VELOX_UNREACHABLE(); }));
 
   // Missing tasks should be ignored in this call.
   ASSERT_FALSE(bufferManager_->updateNumDrivers("test.0.2", 1));

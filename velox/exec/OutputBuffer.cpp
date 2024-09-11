@@ -61,18 +61,12 @@ void ArbitraryBuffer::enqueue(std::unique_ptr<SerializedPageBase> page) {
   VELOX_CHECK(!hasNoMoreData(), "Arbitrary buffer has set no more data marker");
   pages_.withWLock([&](auto& pages) {
     pages.push_back(std::shared_ptr<SerializedPageBase>(page.release()));
+    bytesBuffered_ += page->size();
   });
 }
 
-void ArbitraryBuffer::getAvailablePageSizes(std::vector<int64_t>& out) const {
-  pages_.withRLock([&](auto& pages) {
-    out.reserve(out.size() + pages.size());
-    for (const auto& page : pages) {
-      if (page != nullptr) {
-        out.push_back(page->size());
-      }
-    }
-  });
+int64_t ArbitraryBuffer::bytesBuffered() const {
+  return bytesBuffered_.load();
 }
 
 std::vector<std::shared_ptr<SerializedPageBase>> ArbitraryBuffer::getPages(
@@ -109,6 +103,7 @@ std::vector<std::shared_ptr<SerializedPageBase>> ArbitraryBuffer::getPages(
         break;
       }
       bytesRemoved += pages.front()->size();
+      bytesBuffered_ -= pages.front()->size();
       retrievedPages.push_back(std::move(pages.front()));
       pages.pop_front();
     }
@@ -120,9 +115,10 @@ std::vector<std::shared_ptr<SerializedPageBase>> ArbitraryBuffer::getPages(
 
 std::string ArbitraryBuffer::toString() const {
   return fmt::format(
-      "[ARBITRARY_BUFFER PAGES[{}] NO MORE DATA[{}]]",
+      "[ARBITRARY_BUFFER PAGES[{}] NO MORE DATA[{} bytesBuffered_: {}]]",
       pages_.rlock()->size() - !!hasNoMoreData(),
-      hasNoMoreData());
+      hasNoMoreData(),
+      bytesBuffered_);
 }
 
 void DestinationBuffer::recordEnqueue(const SerializedPageBase& data) {
@@ -173,19 +169,17 @@ void DestinationBuffer::getData(
 
   std::shared_ptr<PendingRead> oldPendingRead = nullptr;
   std::vector<std::unique_ptr<folly::IOBuf>> retrievedData;
-  std::vector<int64_t> remainingBytes;
+  int64_t remainingBytes = 0;
   data_.withRLock([&](auto& data) {
     // VLOG(4) << this << " DestinationBuffer::getData() acquired data_ read
     // lock";
     if (!data.empty() || maxBytes == 0 || sequence - sequence_ < data.size()) {
       oldPendingRead = std::atomic_exchange(&pendingRead_, oldPendingRead);
-      processReadLocked(
-          data,
-          maxBytes,
-          sequence,
-          arbitraryBuffer,
-          retrievedData,
-          remainingBytes);
+      int64_t resultBytes = processReadLocked(
+          data, maxBytes, sequence, arbitraryBuffer, retrievedData);
+      remainingBytes = bytesBuffered_.load() +
+          (arbitraryBuffer ? arbitraryBuffer->bytesBuffered() : 0) -
+          resultBytes;
     } else {
       auto pendingRead = std::make_shared<PendingRead>(
           std::move(notify),
@@ -205,7 +199,7 @@ void DestinationBuffer::getData(
     //          << retrievedData.size() << ", remainingBytes: ("
     //          << fmt::format("{}", fmt::join(remainingBytes, ", "))
     //          << "), this: " << this->toString() << " notifying callback.";
-    notify(std::move(retrievedData), sequence, std::move(remainingBytes));
+    notify(std::move(retrievedData), sequence, remainingBytes);
   }
   oldPendingRead = nullptr;
   // VLOG(3) << this
@@ -456,17 +450,14 @@ void DestinationBuffer::processRead(
   //          << " this: " << this->toString();
 
   std::vector<std::unique_ptr<folly::IOBuf>> retrievedData;
-  std::vector<int64_t> remainingBytes;
+  int64_t remainingBytes = 0;
   data_.withRLock([&](auto& data) {
     // VLOG(4) << this
     //          << " DestinationBuffer::processRead acquired data_ read Lock";
-    processReadLocked(
-        data,
-        maxBytes,
-        sequence,
-        arbitraryBuffer,
-        retrievedData,
-        remainingBytes);
+    int64_t resultBytes = processReadLocked(
+        data, maxBytes, sequence, arbitraryBuffer, retrievedData);
+    remainingBytes = bytesBuffered_.load() +
+        (arbitraryBuffer ? arbitraryBuffer->bytesBuffered() : 0) - resultBytes;
     // VLOG(4) << this
     //          << " DestinationBuffer::processRead release data_ read Lock";
   });
@@ -475,16 +466,15 @@ void DestinationBuffer::processRead(
   //          << " maxBytes: " << maxBytes << ", sequence: " << sequence
   //          << " notify: " << &notify << " activeCheck: " << &activeCheck
   //          << " this: " << this->toString();
-  notify(std::move(retrievedData), sequence, std::move(remainingBytes));
+  notify(std::move(retrievedData), sequence, remainingBytes);
 }
 
-void DestinationBuffer::processReadLocked(
+int64_t DestinationBuffer::processReadLocked(
     const std::vector<std::shared_ptr<SerializedPageBase>>& data,
     uint64_t maxBytes,
     int64_t sequence,
     const ArbitraryBuffer* arbitraryBuffer,
-    std::vector<std::unique_ptr<folly::IOBuf>>& retrievedData,
-    std::vector<int64_t>& remainingBytes) {
+    std::vector<std::unique_ptr<folly::IOBuf>>& retrievedData) {
   auto offset = sequence - sequence_;
   uint64_t resultBytes = 0;
   if (maxBytes > 0) {
@@ -506,7 +496,6 @@ void DestinationBuffer::processReadLocked(
   }
 
   bool atEnd = false;
-  remainingBytes.reserve(data.size() - offset);
   for (; offset < data.size(); ++offset) {
     if (data[offset] == nullptr) {
       VELOX_CHECK_EQ(
@@ -514,15 +503,14 @@ void DestinationBuffer::processReadLocked(
       atEnd = true;
       break;
     }
-    remainingBytes.push_back(data[offset]->size());
   }
 
-  if (!atEnd && arbitraryBuffer) {
-    arbitraryBuffer->getAvailablePageSizes(remainingBytes);
-  }
-  if (retrievedData.empty() && remainingBytes.empty() && atEnd) {
+  if (retrievedData.empty() && bytesBuffered_ == 0 &&
+      (!arbitraryBuffer || arbitraryBuffer->empty()) && atEnd) {
     retrievedData.push_back(nullptr);
   }
+
+  return resultBytes;
 }
 
 bool DestinationBuffer::validateSequenceNumberLocked(
@@ -777,7 +765,7 @@ bool OutputBuffer::enqueue(
   if (bufferedBytes_ >= maxSize_ && future) {
     promises_.withWLock([&future, this](auto& promises) {
       common::testutil::TestValue::adjust(
-        "facebook::velox::exec::OutputBuffer::enqueue", this);
+          "facebook::velox::exec::OutputBuffer::enqueue", this);
       // VLOG(4) << "OutputBuffer::enqueue acquired promises_ write Lock";
       promises.emplace_back("OutputBuffer::enqueue");
       *future = promises.back().getSemiFuture();
@@ -886,11 +874,11 @@ void OutputBuffer::checkIfDone(bool oneDriverFinished) {
           << " this: " << this->toString();
 
   buffers_.withWLock([&](auto& buffers) {
-  //    VLOG(4)
-  //        << this
-  //        << " OutputBuffer::checkIfDone() acquired buffers_ write lock 1.
-  //        numFinished_: "
-  //        << numFinished_ << " numDrivers_: " << numDrivers_;
+    //    VLOG(4)
+    //        << this
+    //        << " OutputBuffer::checkIfDone() acquired buffers_ write lock 1.
+    //        numFinished_: "
+    //        << numFinished_ << " numDrivers_: " << numDrivers_;
     if (oneDriverFinished) {
       ++numFinished_;
     }
@@ -1121,7 +1109,7 @@ void OutputBuffer::getData(
   } else {
     std::vector<std::unique_ptr<folly::IOBuf>> emptyData;
     emptyData.emplace_back(nullptr);
-    notify(std::move(emptyData), sequence, std::vector<int64_t>{});
+    notify(std::move(emptyData), sequence, 0);
     VLOG(1) << "getData received after deleteResults for " << task_->taskId()
             << "/results/" << destination << "/" << sequence;
   }
