@@ -135,7 +135,8 @@ class ExchangeClient : public std::enable_shared_from_this<ExchangeClient> {
 
   struct ProducingSource {
     std::shared_ptr<ExchangeSource> source;
-    std::vector<int64_t> remainingBytes;
+    int64_t remainingBytes;
+//    std::vector<int64_t> remainingBytes;
   };
 
   std::vector<RequestSpec> pickSourcesToRequestLocked();
