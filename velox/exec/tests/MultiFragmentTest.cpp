@@ -2330,7 +2330,7 @@ TEST_P(MultiFragmentTest, taskTerminateWithPendingOutputBuffers) {
         sequence,
         [&](std::vector<std::unique_ptr<folly::IOBuf>> iobufs,
             int64_t inSequence,
-            std::vector<int64_t> /*remainingBytes*/) {
+            int64_t /*remainingBytes*/) {
           for (auto& iobuf : iobufs) {
             if (iobuf != nullptr) {
               ++inSequence;
