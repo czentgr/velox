@@ -314,15 +314,18 @@ ExchangeClient::pickSourcesToRequestLocked() {
     return pickupSingleSourceToRequestLocked();
   }
   std::vector<RequestSpec> requestSpecs;
-  while (!emptySources_.empty()) {
-    auto& source = emptySources_.front();
-    VELOX_CHECK(source->shouldRequestLocked());
-    requestSpecs.push_back({std::move(source), 0});
-    emptySources_.pop();
-  }
 
   int64_t availableSpace =
       maxQueuedBytes_ - queue_->totalBytes() - totalPendingBytes_;
+  while (!emptySources_.empty()) {
+    auto& source = emptySources_.front();
+    VELOX_CHECK(source->shouldRequestLocked());
+    requestSpecs.push_back({std::move(source), availableSpace});
+    emptySources_.pop();
+  }
+
+//  int64_t availableSpace =
+//      maxQueuedBytes_ - queue_->totalBytes() - totalPendingBytes_;
   while (availableSpace > 0 && !producingSources_.empty()) {
     auto& remainingBytes = producingSources_.front().remainingBytes;
     int64_t requestBytes = std::min(availableSpace, remainingBytes);
