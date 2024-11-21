@@ -596,6 +596,7 @@ class FlatVector final : public SimpleVector<T> {
   // NOTE: we need to ensure 'stringBuffers_' and 'stringBufferSet_' are
   // always consistent.
   folly::F14FastSet<const Buffer*> stringBufferSet_;
+
 };
 
 template <>
