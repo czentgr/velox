@@ -60,8 +60,8 @@ void ArbitraryBuffer::enqueue(std::unique_ptr<SerializedPage> page) {
   VELOX_CHECK_NOT_NULL(page, "Unexpected null page");
   VELOX_CHECK(!hasNoMoreData(), "Arbitrary buffer has set no more data marker");
   pages_.withWLock([&](auto& pages) {
-    pages.push_back(std::shared_ptr<SerializedPage>(page.release()));
     bytesBuffered_ += page->size();
+    pages.push_back(std::shared_ptr<SerializedPage>(page.release()));
   });
 }
 
