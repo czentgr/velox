@@ -47,6 +47,7 @@
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
+#include <aws/sts/STSClient.h>
 
 namespace facebook::velox::filesystems {
 namespace {
@@ -651,7 +652,7 @@ class S3FileSystem::Impl {
     clientConfig.payloadSigningPolicy =
         inferPayloadSign(s3Config.payloadSigningPolicy());
 
-    auto credentialsProvider = getCredentialsProvider(s3Config);
+    auto credentialsProvider = getCredentialsProvider(s3Config, clientConfig);
 
     client_ = std::make_shared<Aws::S3::S3Client>(
         credentialsProvider, nullptr /* endpointProvider */, clientConfig);
@@ -683,14 +684,17 @@ class S3FileSystem::Impl {
   std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
   getIAMRoleCredentialsProvider(
       const std::string& s3IAMRole,
-      const std::string& sessionName) const {
-    return std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
-        awsString(s3IAMRole), awsString(sessionName));
+      const std::string& sessionName,
+      const Aws::S3::S3ClientConfiguration& clientConfig) const {
+      auto stsClient = std::make_shared<Aws::STS::STSClient>(clientConfig);
+      return std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+          awsString(s3IAMRole), awsString(sessionName), awsString(""), Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS, stsClient);
   }
 
   // Return an AWSCredentialsProvider based on the config.
   std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
-      const S3Config& s3Config) const {
+      const S3Config& s3Config,
+      const Aws::S3::S3ClientConfiguration& clientConfig) const {
     auto accessKey = s3Config.accessKey();
     auto secretKey = s3Config.secretKey();
     const auto iamRole = s3Config.iamRole();
@@ -720,7 +724,7 @@ class S3FileSystem::Impl {
 
     if (iamRole.has_value()) {
       return getIAMRoleCredentialsProvider(
-          iamRole.value(), s3Config.iamRoleSessionName());
+          iamRole.value(), s3Config.iamRoleSessionName(), clientConfig);
     }
 
     return getDefaultCredentialsProvider();
