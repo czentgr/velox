@@ -509,6 +509,9 @@ endif()
 velox_set_source(simdjson)
 velox_resolve_dependency(simdjson 3.9.3)
 
+velox_set_source(fastfloat)
+velox_resolve_dependency(fastfloat)
+
 velox_set_source(folly)
 velox_resolve_dependency(folly)
 
