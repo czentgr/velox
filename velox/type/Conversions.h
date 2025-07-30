@@ -570,6 +570,16 @@ struct Converter<TypeKind::VARBINARY, void, TPolicy> {
   }
 };
 
+/// To CHAR converter.
+template <typename TPolicy>
+struct Converter<TypeKind::CHAR, void, TPolicy> {
+  // Same semantics of TypeKind::VARCHAR converter.
+  template <typename T>
+  static Expected<std::string> tryCast(const T& val) {
+    return Converter<TypeKind::VARCHAR, void, TPolicy>::tryCast(val);
+  }
+};
+
 /// To VARCHAR converter.
 template <typename TPolicy>
 struct Converter<TypeKind::VARCHAR, void, TPolicy> {

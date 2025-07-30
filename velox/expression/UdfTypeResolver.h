@@ -130,6 +130,13 @@ struct resolver<Varbinary> {
 };
 
 template <>
+struct resolver<CharT> {
+  using in_type = StringView;
+  using null_free_in_type = in_type;
+  using out_type = StringWriter;
+};
+
+template <>
 struct resolver<Date> {
   using in_type = int32_t;
   using null_free_in_type = in_type;

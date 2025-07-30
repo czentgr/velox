@@ -54,6 +54,13 @@ void copy_from_internal<TypeKind::VARCHAR>(
   out.castTo<Varchar>().copy_from(in.castTo<Varchar>());
 }
 
+template <>
+void copy_from_internal<TypeKind::CHAR>(
+    GenericWriter& out,
+    const GenericView& in) {
+  out.castTo<Varchar>().copy_from(in.castTo<Varchar>());
+}
+
 // Fast path when array elements are primitives.
 template <TypeKind T>
 void copy_from_internal_array_fast(GenericWriter& out, const GenericView& in) {

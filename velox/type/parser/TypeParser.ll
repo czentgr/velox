@@ -36,7 +36,7 @@ Z   [Z|z]
 WORD              ([[:alpha:][:alnum:]_]*)
 QUOTED_ID         (['"']([^"\n]|"")*['"'])
 NUMBER            ([[:digit:]]+)
-VARIABLE          (VARCHAR|VARBINARY)
+VARIABLE          (VARCHAR|VARBINARY|CHAR)
 
 %%
 

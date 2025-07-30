@@ -253,6 +253,14 @@ void deserializeOne<TypeKind::VARBINARY>(
   deserializeString(in, index, result);
 }
 
+template <>
+void deserializeOne<TypeKind::CHAR>(
+    ByteInputStream& in,
+    vector_size_t index,
+    BaseVector& result) {
+  deserializeString(in, index, result);
+}
+
 class NullsReader {
  public:
   NullsReader(ByteInputStream& in, int32_t size) {
@@ -443,7 +451,7 @@ int compareStringAsc(
 template <
     bool typeProvidesCustomComparison,
     TypeKind Kind,
-    std::enable_if_t<Kind == TypeKind::VARCHAR, int32_t> = 0>
+    std::enable_if_t<Kind == TypeKind::VARCHAR | Kind == TypeKind::CHAR, int32_t> = 0>
 std::optional<int32_t> compare(
     ByteInputStream& left,
     const BaseVector& right,
@@ -696,7 +704,7 @@ template <
     std::enable_if_t<
         Kind != TypeKind::VARCHAR && Kind != TypeKind::VARBINARY &&
             Kind != TypeKind::ARRAY && Kind != TypeKind::MAP &&
-            Kind != TypeKind::ROW,
+            Kind != TypeKind::ROW && Kind != TypeKind::CHAR,
         int32_t> = 0>
 std::optional<int32_t> compare(
     ByteInputStream& left,

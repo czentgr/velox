@@ -1302,7 +1302,7 @@ class RowContainer {
       return compareComplexType(
           left, right, type, leftOffset, rightOffset, flags);
     } else if constexpr (
-        Kind == TypeKind::VARCHAR || Kind == TypeKind::VARBINARY) {
+        Kind == TypeKind::VARCHAR || Kind == TypeKind::VARBINARY || Kind == TypeKind::CHAR) {
       auto leftValue = valueAt<StringView>(left, leftOffset);
       auto rightValue = valueAt<StringView>(right, rightOffset);
       auto result = compareStringAsc(leftValue, rightValue);

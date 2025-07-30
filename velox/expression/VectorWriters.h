@@ -350,7 +350,7 @@ struct VectorWriter<Row<T...>> : public VectorWriterBase {
 template <typename T>
 struct VectorWriter<
     T,
-    std::enable_if_t<std::is_same_v<T, Varchar> | std::is_same_v<T, Varbinary>>>
+    std::enable_if_t<std::is_same_v<T, Varchar> | std::is_same_v<T, Varbinary> | std::is_same_v<T, CharT>>>
     : public VectorWriterBase {
   using vector_t = typename TypeToFlatVector<T>::type;
   using exec_out_t = StringWriter;

@@ -36,4 +36,9 @@ struct KindToSimpleType<TypeKind::VARBINARY> {
   using type = Varbinary;
 };
 
+template <>
+struct KindToSimpleType<TypeKind::CHAR> {
+  using type = Varchar;
+};
+
 } // namespace facebook::velox

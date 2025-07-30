@@ -206,6 +206,8 @@ std::string Variant::toString(const TypePtr& type) const {
       auto encoded = encoding::Base64::encode(str);
       return encoded;
     }
+    case TypeKind::CHAR:
+      [[fallthrough]];
     case TypeKind::VARCHAR: {
       auto& str = value<TypeKind::VARCHAR>();
       return str;
@@ -338,6 +340,8 @@ std::string Variant::toJson(const TypePtr& type) const {
       auto encoded = encoding::Base64::encode(str);
       return '"' + encoded + '"';
     }
+    case TypeKind::CHAR:
+      [[fallthrough]];
     case TypeKind::VARCHAR: {
       auto& str = value<TypeKind::VARCHAR>();
       std::string target;
@@ -464,6 +468,8 @@ std::string Variant::toJsonUnsafe(const TypePtr& type) const {
       auto encoded = encoding::Base64::encode(str);
       return '"' + encoded + '"';
     }
+    case TypeKind::CHAR:
+      [[fallthrough]];
     case TypeKind::VARCHAR: {
       auto& str = value<TypeKind::VARCHAR>();
       std::string target;
@@ -614,6 +620,8 @@ folly::dynamic Variant::serialize() const {
       objValue = value<TypeKind::DOUBLE>();
       break;
     }
+    case TypeKind::CHAR:
+      [[fallthrough]];
     case TypeKind::VARCHAR: {
       objValue = value<TypeKind::VARCHAR>();
       break;

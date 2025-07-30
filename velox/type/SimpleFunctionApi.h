@@ -220,6 +220,11 @@ struct Varchar {
   Varchar() {}
 };
 
+struct CharT {
+ private:
+  CharT() {}
+};
+
 template <typename T>
 struct Constant {};
 
@@ -256,6 +261,9 @@ struct CppToType<Varchar> : public CppToTypeBase<TypeKind::VARCHAR> {};
 
 template <>
 struct CppToType<Varbinary> : public CppToTypeBase<TypeKind::VARBINARY> {};
+
+template <>
+struct CppToType<CharT> : public CppToTypeBase<TypeKind::CHAR> {};
 
 template <>
 struct CppToType<Date> : public CppToTypeBase<TypeKind::INTEGER> {};
@@ -314,6 +322,9 @@ struct SimpleTypeTrait<Varchar> : public TypeTraits<TypeKind::VARCHAR> {};
 
 template <>
 struct SimpleTypeTrait<Varbinary> : public TypeTraits<TypeKind::VARBINARY> {};
+
+template <>
+struct SimpleTypeTrait<CharT> : public TypeTraits<TypeKind::CHAR> {};
 
 template <>
 struct SimpleTypeTrait<Date> : public SimpleTypeTrait<int32_t> {

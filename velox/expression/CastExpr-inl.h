@@ -217,6 +217,14 @@ void CastExpr::applyCastKernel(
       }
     }
 
+    if constexpr (FromKind == TypeKind::CHAR || ToKind == TypeKind::CHAR) {
+      if constexpr (
+          (FromKind != TypeKind::CHAR && FromKind != TypeKind::VARCHAR) ||
+          (ToKind != TypeKind::CHAR && ToKind != TypeKind::VARCHAR)) {
+        VELOX_USER_FAIL("Cannot cast {} to {}.", input->type()->toString(), toType->toString());
+      }
+    }
+
     const auto castResult =
         util::Converter<ToKind, void, TPolicy>::tryCast(inputRowValue);
     if (castResult.hasError()) {
@@ -227,7 +235,7 @@ void CastExpr::applyCastKernel(
     const auto output = castResult.value();
 
     if constexpr (
-        ToKind == TypeKind::VARCHAR || ToKind == TypeKind::VARBINARY) {
+        ToKind == TypeKind::VARCHAR || ToKind == TypeKind::VARBINARY || ToKind == TypeKind::CHAR) {
       // Write the result output to the output vector
       auto writer = exec::StringWriter(result, row);
       auto maxWriteLength = getVaryingLengthScalarTypeLength(*toType);
@@ -235,6 +243,9 @@ void CastExpr::applyCastKernel(
         writer.copy_from(output.substr(0, maxWriteLength));
       } else {
         writer.copy_from(output);
+        if constexpr (ToKind == TypeKind::CHAR) {
+          writer.append(std::string(maxWriteLength - output.size(), ' '));
+        }
       }
       writer.finalize();
     } else {

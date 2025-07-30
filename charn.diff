@@ -1,0 +1,251 @@
+diff --git a/velox/type/Type.cpp b/velox/type/Type.cpp
+index 868b449cae..bde29e5122 100644
+--- a/velox/type/Type.cpp
++++ b/velox/type/Type.cpp
+@@ -97,13 +97,23 @@ uint32_t getVarbinaryLength(const Type& type) {
+   VELOX_FAIL("Type is not Varbinary");
+ }
+ 
++uint32_t getCharLength(const Type& type) {
++  if (type.isChar()) {
++    const auto& charType = type.asChar();
++    return charType.length();
++  }
++  VELOX_FAIL("Type is not Char");
++}
++
+ uint32_t getVaryingLengthScalarTypeLength(const Type& type) {
+   if (type.kind() == TypeKind::VARCHAR) {
+     return getVarcharLength(type);
+   } else if (type.kind() == TypeKind::VARBINARY) {
+     return getVarbinaryLength(type);
++  } else if (type.kind() == TypeKind::CHAR) {
++    return getCharLength(type);
+   }
+-  VELOX_FAIL("Type is not Varchar or Varbinary");
++  VELOX_FAIL("Type is not Varchar or Varbinary or Char");
+ }
+ 
+ namespace {
+@@ -153,6 +163,9 @@ TypePtr Type::create(const folly::dynamic& obj) {
+   if (isVarcharName(typeName)) {
+     return VARCHAR(obj["length"].asInt());
+   }
++  if (isCharName(typeName)) {
++    return CHAR(obj["length"].asInt());
++  }
+   // Checks if 'typeName' specifies a custom type.
+   if (customTypeExists(typeName)) {
+     std::vector<TypeParameter> params;
+@@ -929,6 +942,25 @@ TypePtr VARBINARY(uint32_t length) {
+   return VarbinaryType::create(length);
+ }
+ 
++template <>
++const std::shared_ptr<const CharType> CharType::create() {
++  VELOX_USER_FAIL("CHAR type without length is not supported.");
++}
++
++template <>
++const std::shared_ptr<const CharType> CharType::create(
++    uint32_t length) {
++  return std::make_shared<const CharType>(length);
++}
++
++TypePtr CHAR() {
++  return CharType::create();
++}
++
++TypePtr CHAR(uint32_t length) {
++  return CharType::create(length);
++}
++
+ TypePtr UNKNOWN() {
+   return TypeFactory<TypeKind::UNKNOWN>::create();
+ }
+@@ -954,6 +986,11 @@ TypePtr createScalarType<TypeKind::VARBINARY>() {
+   return VarbinaryType::create();
+ }
+ 
++template <>
++TypePtr createScalarType<TypeKind::CHAR>() {
++  return CharType::create();
++}
++
+ TypePtr createType(TypeKind kind, std::vector<TypePtr>&& children) {
+   if (kind == TypeKind::FUNCTION) {
+     VELOX_USER_CHECK_GE(
+@@ -1001,6 +1038,11 @@ TypePtr createType<TypeKind::VARBINARY>(std::vector<TypePtr>&& /*children*/) {
+   return VARBINARY();
+ }
+ 
++template <>
++TypePtr createType<TypeKind::CHAR>(std::vector<TypePtr>&& /*children*/) {
++  return CHAR();
++}
++
+ template <>
+ TypePtr createType<TypeKind::OPAQUE>(std::vector<TypePtr>&& /*children*/) {
+   std::string name{TypeTraits<TypeKind::OPAQUE>::name};
+@@ -1377,6 +1419,8 @@ class VaryingLengthParametricType {
+       return VARCHAR(parameters[0].longLiteral.value());
+     } else if constexpr (KIND == TypeKind::VARBINARY) {
+       return VARBINARY(parameters[0].longLiteral.value());
++    } else if constexpr (KIND == TypeKind::CHAR) {
++      return CHAR(parameters[0].longLiteral.value());
+     } else {
+       VELOX_UNSUPPORTED("Unknown TypeKind for varying length parametric type.");
+     }
+@@ -1396,6 +1440,7 @@ const ParametricTypeMap& parametricBuiltinTypes() {
+       {"FUNCTION", FunctionParametricType::create},
+       {"VARCHAR", VaryingLengthParametricType<TypeKind::VARCHAR>::create},
+       {"VARBINARY", VaryingLengthParametricType<TypeKind::VARBINARY>::create},
++      {"CHAR", VaryingLengthParametricType<TypeKind::CHAR>::create},
+   };
+   return kTypes;
+ }
+diff --git a/velox/type/Type.h b/velox/type/Type.h
+index edb117d753..61512131d1 100644
+--- a/velox/type/Type.h
++++ b/velox/type/Type.h
+@@ -72,10 +72,11 @@ enum class TypeKind : int8_t {
+   BIGINT = 4,
+   REAL = 5,
+   DOUBLE = 6,
+-  VARCHAR = 7,
+-  VARBINARY = 8,
+-  TIMESTAMP = 9,
+-  HUGEINT = 10,
++  CHAR = 7,
++  VARCHAR = 8,
++  VARBINARY = 9,
++  TIMESTAMP = 10,
++  HUGEINT = 11,
+   // Enum values for ComplexTypes start after 30 to leave
+   // some values space to accommodate adding new scalar/native
+   // types above.
+@@ -85,7 +86,7 @@ enum class TypeKind : int8_t {
+   UNKNOWN = 33,
+   FUNCTION = 34,
+   OPAQUE = 35,
+-  INVALID = 36
++  INVALID = 36,
+ };
+ 
+ VELOX_DECLARE_ENUM_NAME(TypeKind);
+@@ -113,6 +114,7 @@ template <TypeKind KIND>
+ class VaryingLengthScalarType;
+ using VarcharType = VaryingLengthScalarType<TypeKind::VARCHAR>;
+ using VarbinaryType = VaryingLengthScalarType<TypeKind::VARBINARY>;
++using CharType = VaryingLengthScalarType<TypeKind::CHAR>;
+ class ShortDecimalType;
+ class LongDecimalType;
+ class ArrayType;
+@@ -262,6 +264,19 @@ struct TypeTraits<TypeKind::VARCHAR> {
+   static constexpr const char* name = "VARCHAR";
+ };
+ 
++template <>
++struct TypeTraits<TypeKind::CHAR> {
++  using ImplType = CharType;
++  using NativeType = velox::StringView;
++  using DeepCopiedType = std::string;
++  static constexpr uint32_t minSubTypes = 0;
++  static constexpr uint32_t maxSubTypes = 0;
++  static constexpr TypeKind typeKind = TypeKind::CHAR;
++  static constexpr bool isPrimitiveType = true;
++  static constexpr bool isFixedWidth = false;
++  static constexpr const char* name = "CHAR";
++};
++
+ template <>
+ struct TypeTraits<TypeKind::TIMESTAMP> {
+   using ImplType = ScalarType<TypeKind::TIMESTAMP>;
+@@ -585,10 +600,12 @@ class Type : public Tree<const TypePtr>, public velox::ISerializable {
+ 
+   const VarcharType& asVarchar() const;
+   const VarbinaryType& asVarbinary() const;
++  const CharType& asChar() const;
+   const ShortDecimalType& asShortDecimal() const;
+   const LongDecimalType& asLongDecimal() const;
+   bool isVarchar() const;
+   bool isVarbinary() const;
++  bool isChar() const;
+   bool isShortDecimal() const;
+   bool isLongDecimal() const;
+   bool isDecimal() const;
+@@ -991,7 +1008,7 @@ uint32_t getVaryingLengthScalarTypeLength(const Type& type);
+ FOLLY_ALWAYS_INLINE bool isVaryingLengthScalarType(const TypePtr& type) {
+   VELOX_CHECK_NOT_NULL(type);
+   return (
+-      type->kind() == TypeKind::VARCHAR || type->kind() == TypeKind::VARBINARY);
++      type->kind() == TypeKind::VARCHAR || type->kind() == TypeKind::VARBINARY || type->kind() == TypeKind::CHAR);
+ }
+ 
+ // Functions for Varchar.
+@@ -1024,6 +1041,21 @@ FOLLY_ALWAYS_INLINE bool isVarbinaryName(const std::string& name) {
+ 
+ uint32_t getVarbinaryLength(const Type& type);
+ 
++// Functions for Char.
++FOLLY_ALWAYS_INLINE const CharType& Type::asChar() const {
++  return dynamic_cast<const CharType&>(*this);
++}
++
++FOLLY_ALWAYS_INLINE bool Type::isChar() const {
++  return dynamic_cast<const CharType*>(this) != nullptr;
++}
++
++FOLLY_ALWAYS_INLINE bool isCharName(const std::string& name) {
++  return (name == "CHAR");
++}
++
++uint32_t getCharLength(const Type& type);
++
+ class ArrayType : public TypeBase<TypeKind::ARRAY> {
+  public:
+   explicit ArrayType(TypePtr child);
+@@ -2018,6 +2050,9 @@ TypePtr VARCHAR(uint32_t length);
+ TypePtr VARBINARY();
+ TypePtr VARBINARY(uint32_t length);
+ 
++TypePtr CHAR();
++TypePtr CHAR(uint32_t length);
++
+ TypePtr UNKNOWN();
+ 
+ template <TypeKind KIND>
+@@ -2031,6 +2066,9 @@ TypePtr createScalarType<TypeKind::VARCHAR>();
+ template <>
+ TypePtr createScalarType<TypeKind::VARBINARY>();
+ 
++template <>
++TypePtr createScalarType<TypeKind::CHAR>();
++
+ TypePtr createScalarType(TypeKind kind);
+ 
+ TypePtr createType(TypeKind kind, std::vector<TypePtr>&& children);
+@@ -2063,6 +2101,10 @@ template <>
+ std::shared_ptr<const Type> createType<TypeKind::VARBINARY>(
+     std::vector<std::shared_ptr<const Type>>&& children);
+ 
++template <>
++std::shared_ptr<const Type> createType<TypeKind::CHAR>(
++    std::vector<std::shared_ptr<const Type>>&& children);
++
+ template <>
+ TypePtr createType<TypeKind::ROW>(std::vector<TypePtr>&& children);
+ 
+diff --git a/velox/type/parser/TypeParser.ll b/velox/type/parser/TypeParser.ll
+index 1ab9bd6162..6e24f7a62b 100644
+--- a/velox/type/parser/TypeParser.ll
++++ b/velox/type/parser/TypeParser.ll
+@@ -36,7 +36,7 @@ Z   [Z|z]
+ WORD              ([[:alpha:][:alnum:]_]*)
+ QUOTED_ID         (['"']([^"\n]|"")*['"'])
+ NUMBER            ([[:digit:]]+)
+-VARIABLE          (VARCHAR|VARBINARY)
++VARIABLE          (VARCHAR|VARBINARY|CHAR)
+ 
+ %%
+ 
