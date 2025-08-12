@@ -564,7 +564,7 @@ if(${VELOX_BUILD_MINIMAL_WITH_DWIO}
 endif()
 
 velox_set_source(simdjson)
-velox_resolve_dependency(simdjson 3.9.3)
+velox_resolve_dependency(simdjson 3.13.0)
 
 velox_set_source(folly)
 velox_resolve_dependency(folly)
