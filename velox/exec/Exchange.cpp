@@ -15,6 +15,8 @@
  */
 #include "velox/exec/Exchange.h"
 
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/serialization/Serializable.h"
 #include "velox/exec/Task.h"
 #include "velox/serializers/CompactRowSerializer.h"
@@ -86,6 +88,7 @@ void Exchange::addRemoteTaskIds(std::vector<std::string>& remoteTaskIds) {
 }
 
 bool Exchange::getSplits(ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   if (!processSplits_) {
     return false;
   }
@@ -94,10 +97,12 @@ bool Exchange::getSplits(ContinueFuture* future) {
   }
   std::vector<std::string> remoteTaskIds;
   for (;;) {
+    nvtx3::scoped_range loop_range{"main loop"};
     exec::Split split;
     auto reason = operatorCtx_->task()->getSplitOrFuture(
         operatorCtx_->driverCtx()->splitGroupId, planNodeId(), split, *future);
     if (reason == BlockingReason::kNotBlocked) {
+      nvtx3::mark("not blocked");
       if (split.hasConnectorSplit()) {
         auto remoteSplit = std::dynamic_pointer_cast<RemoteConnectorSplit>(
             split.connectorSplit);
@@ -125,7 +130,9 @@ bool Exchange::getSplits(ContinueFuture* future) {
 }
 
 BlockingReason Exchange::isBlocked(ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   if (!currentPages_.empty() || atEnd_) {
+    nvtx3::mark("not blocked");
     return BlockingReason::kNotBlocked;
   }
 
@@ -155,11 +162,13 @@ BlockingReason Exchange::isBlocked(ContinueFuture* future) {
     futures.push_back(std::move(splitFuture_));
     futures.push_back(std::move(dataFuture));
     *future = folly::collectAny(futures).unit();
+    nvtx3::mark("wait for split");
     return BlockingReason::kWaitForSplit;
   }
 
   // Block until data becomes available.
   *future = std::move(dataFuture);
+  nvtx3::mark("wait for producer");
   return BlockingReason::kWaitForProducer;
 }
 
@@ -184,6 +193,7 @@ std::unique_ptr<folly::IOBuf> mergePages(
 } // namespace
 
 RowVectorPtr Exchange::getOutput() {
+  NVTX3_FUNC_RANGE();
   auto* serde = getSerde();
   if (serde->supportsAppendInDeserialize()) {
     uint64_t rawInputBytes{0};

@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/HashProbe.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/base/Counters.h"
 #include "velox/common/base/StatsReporter.h"
 #include "velox/common/testutil/TestValue.h"
@@ -619,8 +622,10 @@ void HashProbe::prepareInputIndicesBuffers(
 }
 
 BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   switch (state_) {
     case ProbeOperatorState::kWaitForBuild:
+      nvtx3::mark("ProbeOperatorState::kWaitForBuild");
       VELOX_CHECK_NULL(table_);
       if (!future_.valid()) {
         setRunning();
@@ -628,18 +633,21 @@ BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
       }
       break;
     case ProbeOperatorState::kRunning:
+      nvtx3::mark("ProbeOperatorState::kRunning");
       VELOX_CHECK_NOT_NULL(table_);
       if (spillInputReader_ != nullptr) {
         addSpillInput();
       }
       break;
     case ProbeOperatorState::kWaitForPeers:
+      nvtx3::mark("ProbeOperatorState::kWaitForPeers");
       VELOX_CHECK(canSpill());
       if (!future_.valid()) {
         setRunning();
       }
       break;
     case ProbeOperatorState::kFinish:
+      nvtx3::mark("ProbeOperatorState::kFinish");
       break;
     default:
       VELOX_UNREACHABLE(probeOperatorStateName(state_));
@@ -654,6 +662,7 @@ BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
 }
 
 void HashProbe::decodeAndDetectNonNullKeys() {
+  NVTX3_FUNC_RANGE();
   nonNullInputRows_.resize(input_->size());
   nonNullInputRows_.setAll();
 
@@ -670,6 +679,7 @@ void HashProbe::decodeAndDetectNonNullKeys() {
 }
 
 void HashProbe::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   if (skipInput_) {
     VELOX_CHECK_NULL(input_);
     return;
@@ -773,6 +783,7 @@ void HashProbe::addInput(RowVectorPtr input) {
 }
 
 void HashProbe::prepareOutput(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   // Try to re-use memory for the output vectors that contain build-side data.
   // We expect output vectors containing probe-side data to be null (reset in
   // clearIdentityProjectedOutput). BaseVector::prepareForReuse keeps null
@@ -794,6 +805,7 @@ VectorPtr createConstantFalse(vector_size_t size, memory::MemoryPool* pool) {
 } // namespace
 
 void HashProbe::fillLeftSemiProjectMatchColumn(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   if (emptyBuildSide()) {
     // Build side is empty or all rows have null join keys.
     if (nullAware_ && buildSideHasNullKeys_) {
@@ -839,6 +851,7 @@ void HashProbe::fillLeftSemiProjectMatchColumn(vector_size_t size) {
 }
 
 void HashProbe::fillOutput(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   prepareOutput(size);
 
   for (auto [in, out] : projectedInputColumns_) {
@@ -863,6 +876,7 @@ void HashProbe::fillOutput(vector_size_t size) {
 }
 
 RowVectorPtr HashProbe::getBuildSideOutput() {
+  NVTX3_FUNC_RANGE();
   auto* outputTableRows =
       initBuffer<char*>(outputTableRows_, outputTableRowsCapacity_, pool());
   int32_t numOut;
@@ -1001,6 +1015,7 @@ void HashProbe::checkStateTransition(ProbeOperatorState state) {
 }
 
 RowVectorPtr HashProbe::getOutput() {
+  NVTX3_FUNC_RANGE();
   // Release the extra unused memory reserved for output processing.
   SCOPE_EXIT {
     pool()->release();

@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/HashTable.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/base/AsyncSource.h"
 #include "velox/common/base/Exceptions.h"
 #include "velox/common/base/Portability.h"
@@ -102,6 +105,7 @@ class ProbeState {
   // Use one instruction to make 16 copies of the tag being searched for
   template <typename Table>
   inline void preProbe(const Table& table, uint64_t hash, int32_t row) {
+    NVTX3_FUNC_RANGE();
     row_ = row;
     bucketOffset_ = table.bucketOffset(hash);
     const auto tag = BaseHashTable::hashTag(hash);
@@ -117,6 +121,7 @@ class ProbeState {
   // If there is a match, load corresponding data from the table.
   template <Operation op = Operation::kProbe, typename Table>
   inline void firstProbe(const Table& table, int32_t firstKey) {
+    NVTX3_FUNC_RANGE();
     tagsInTable_ = BaseHashTable::loadTags(
         reinterpret_cast<uint8_t*>(table.table_), bucketOffset_);
     table.incrementTagLoads();
@@ -135,6 +140,7 @@ class ProbeState {
       int64_t& numTombstones,
       bool extraCheck,
       TableInsertPartitionInfo* partitionInfo = nullptr) {
+    NVTX3_FUNC_RANGE();
     VELOX_DCHECK(partitionInfo == nullptr || op == Operation::kInsert);
 
     if (group_ && compare(group_, row_)) {
@@ -226,6 +232,7 @@ class ProbeState {
   FOLLY_ALWAYS_INLINE char* joinNormalizedKeyFullProbe(
       const Table& table,
       const uint64_t* keys) {
+    nvtx3::scoped_range kNext{"ProbeState::joinNormalizedKeyFullProbe"};
     if (group_ && RowContainer::normalizedKey(group_) == keys[row_]) {
       table.incrementHits();
       return group_;

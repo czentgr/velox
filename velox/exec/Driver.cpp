@@ -16,6 +16,8 @@
 
 #include "velox/exec/Driver.h"
 
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/process/TraceContext.h"
 #include "velox/exec/Task.h"
 #include "velox/vector/LazyVector.h"
@@ -316,6 +318,7 @@ void Driver::enqueueInternal() {
 // terminating throw. Annotate exceptions with Operator info.
 #define CALL_OPERATOR(call, operatorPtr, operatorId, operatorMethod)       \
   try {                                                                    \
+    nvtx3::scoped_range range{"call operator"};                            \
     Operator::NonReclaimableSectionGuard nonReclaimableGuard(operatorPtr); \
     RuntimeStatWriterScopeGuard statsWriterGuard(operatorPtr);             \
     threadNumVeloxThrow() = 0;                                             \
@@ -456,6 +459,7 @@ StopReason Driver::runInternal(
     std::shared_ptr<Driver>& self,
     std::shared_ptr<BlockingState>& blockingState,
     RowVectorPtr& result) {
+  NVTX3_FUNC_RANGE();
   const auto now = getCurrentTimeMicro();
   const auto queuedTimeUs = now - queueTimeStartUs_;
   // Update the next operator's queueTime.
@@ -502,6 +506,7 @@ StopReason Driver::runInternal(
 
     for (;;) {
       for (int32_t i = numOperators - 1; i >= 0; --i) {
+        nvtx3::scoped_range operator_loop{"operator loop"};
         stop = task()->shouldStop();
         if (stop != StopReason::kNone) {
           guard.notThrown();

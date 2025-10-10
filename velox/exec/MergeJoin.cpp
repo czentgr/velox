@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 #include "velox/exec/MergeJoin.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/exec/OperatorUtils.h"
 #include "velox/exec/Task.h"
 #include "velox/expression/FieldReference.h"
@@ -214,6 +217,7 @@ bool MergeJoin::needsInput() const {
 }
 
 void MergeJoin::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NULL(input_);
   input_ = std::move(input);
   // TODO: support selective lazy loading both sides.
@@ -451,6 +455,7 @@ bool MergeJoin::tryAddOutputRow(
 bool MergeJoin::prepareOutput(
     const RowVectorPtr& left,
     const RowVectorPtr& right) {
+  NVTX3_FUNC_RANGE();
   // If there is already an allocated output_, check if we can use it.
   if (output_ != nullptr) {
     // If there is a new left, we can't continue using it as the old one is the
@@ -741,6 +746,7 @@ RowVectorPtr MergeJoin::filterOutputForAntiJoin(const RowVectorPtr& output) {
 }
 
 RowVectorPtr MergeJoin::getOutput() {
+  NVTX3_FUNC_RANGE();
   // Make sure to have is-blocked or needs-input as true if returning null
   // output. Otherwise, Driver assumes the operator is finished.
 
@@ -749,6 +755,7 @@ RowVectorPtr MergeJoin::getOutput() {
 
   // TODO Finish early if ran out of data on either side of the join.
   for (;;) {
+    nvtx3::scoped_range loop_range{"MergeJoin::getOutput loop"};
     auto output = doGetOutput();
     if (output != nullptr && output->size() > 0) {
       if (filter_) {
@@ -882,6 +889,7 @@ RowVectorPtr MergeJoin::handleRightSideNullRows() {
 }
 
 RowVectorPtr MergeJoin::doGetOutput() {
+  NVTX3_FUNC_RANGE();
   // Check if we ran out of space in the output vector in the middle of the
   // match.
   if (leftMatch_ && leftMatch_->cursor) {
@@ -1268,6 +1276,7 @@ void MergeJoin::clearRightInput() {
 }
 
 RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
+  NVTX3_FUNC_RANGE();
   const auto numRows = output->size();
 
   RowVectorPtr fullOuterOutput = nullptr;
@@ -1441,6 +1450,7 @@ RowVectorPtr MergeJoin::applyFilter(const RowVectorPtr& output) {
 }
 
 void MergeJoin::evaluateFilter(const SelectivityVector& rows) {
+  NVTX3_FUNC_RANGE();
   EvalCtx evalCtx(operatorCtx_->execCtx(), filter_.get(), filterInput_.get());
   filter_->eval(0, 1, true, rows, evalCtx, filterResult_);
 

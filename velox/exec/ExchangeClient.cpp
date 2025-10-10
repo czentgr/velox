@@ -15,6 +15,8 @@
  */
 #include "velox/exec/ExchangeClient.h"
 
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/base/Counters.h"
 #include "velox/common/base/StatsReporter.h"
 
@@ -124,6 +126,7 @@ std::vector<std::unique_ptr<SerializedPage>> ExchangeClient::next(
     uint32_t maxBytes,
     bool* atEnd,
     ContinueFuture* future) {
+  nvtx3::scoped_range kNext{"ExchangeClient::next"};
   std::vector<RequestSpec> requestSpecs;
   std::vector<std::unique_ptr<SerializedPage>> pages;
   ContinuePromise stalePromise = ContinuePromise::makeEmpty();
@@ -171,6 +174,7 @@ void ExchangeClient::request(std::vector<RequestSpec>&& requestSpecs) {
         .thenValue(
             [self, spec = std::move(spec), sendTimeMs = getCurrentTimeMs()](
                 ExchangeSource::Response&& response) {
+              nvtx3::scoped_range kNext{"ExchangeClient::request"};
               const auto requestTimeMs = getCurrentTimeMs() - sendTimeMs;
               if (spec.maxBytes == 0) {
                 RECORD_HISTOGRAM_METRIC_VALUE(
