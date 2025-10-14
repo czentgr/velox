@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/LocalPartition.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/exec/Task.h"
 #include "velox/vector/EncodedVectorCopy.h"
 
@@ -282,6 +285,7 @@ BlockingReason LocalExchange::isBlocked(ContinueFuture* future) {
 }
 
 RowVectorPtr LocalExchange::getOutput() {
+  NVTX3_FUNC_RANGE();
   if (hasDrained()) {
     return nullptr;
   }
@@ -444,6 +448,7 @@ RowVectorPtr LocalPartition::processPartition(
     int partition,
     const BufferPtr& indices,
     const vector_size_t* rawIndices) {
+  NVTX3_FUNC_RANGE();
   RowVectorPtr partitionData{nullptr};
   if (singlePartitionBufferSize_ > 0) {
     if (partitionBuffers_.empty()) {
@@ -482,6 +487,7 @@ RowVectorPtr LocalPartition::processPartition(
 }
 
 void LocalPartition::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   prepareForInput(input);
 
   const auto singlePartition = numPartitions_ == 1
@@ -558,6 +564,7 @@ BlockingReason LocalPartition::isBlocked(ContinueFuture* future) {
     *future = folly::collectAll(futures_.begin(), futures_.end()).unit();
     futures_.clear();
     blockingReasons_.clear();
+    nvtx3::mark("LocalPartition::isBlocked");
     return blockingReason;
   }
   return BlockingReason::kNotBlocked;
@@ -597,6 +604,7 @@ bool LocalPartition::isFinished() {
 }
 
 RowVectorPtr LocalPartition::getOutput() {
+  NVTX3_FUNC_RANGE();
   if (!isDraining()) {
     return nullptr;
   }

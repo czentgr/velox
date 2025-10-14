@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/PartitionedOutput.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/exec/OutputBufferManager.h"
 #include "velox/exec/Task.h"
 
@@ -65,6 +68,7 @@ BlockingReason Destination::advance(
     bool* atEnd,
     ContinueFuture* future,
     Scratch& scratch) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_LE(!!outputCompactRow + !!outputUnsafeRow, 1);
   if (rowIdx_ >= rows_.size()) {
     *atEnd = true;
@@ -120,6 +124,7 @@ BlockingReason Destination::flush(
     OutputBufferManager& bufferManager,
     const std::function<void()>& bufferReleaseFn,
     ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   if (!current_ || rowsInCurrent_ == 0) {
     return BlockingReason::kNotBlocked;
   }
@@ -305,6 +310,7 @@ void PartitionedOutput::estimateRowSizes() {
 }
 
 void PartitionedOutput::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   initializeInput(std::move(input));
   initializeDestinations();
   initializeSizeBuffers();
@@ -358,6 +364,7 @@ void PartitionedOutput::addInput(RowVectorPtr input) {
 }
 
 void PartitionedOutput::collectNullRows() {
+  NVTX3_FUNC_RANGE();
   auto size = input_->size();
   rows_.resize(size);
   rows_.setAll();
@@ -388,6 +395,7 @@ void PartitionedOutput::collectNullRows() {
 }
 
 RowVectorPtr PartitionedOutput::getOutput() {
+  NVTX3_FUNC_RANGE();
   if (finished_) {
     return nullptr;
   }
@@ -407,7 +415,9 @@ RowVectorPtr PartitionedOutput::getOutput() {
   bool workLeft;
   do {
     workLeft = false;
+    nvtx3::scoped_range loop_range{"main loop"};
     for (auto& destination : destinations_) {
+      nvtx3::scoped_range loop_range2{"destination loop"};
       bool atEnd = false;
       blockingReason_ = destination->advance(
           maxPageSize,
@@ -439,6 +449,7 @@ RowVectorPtr PartitionedOutput::getOutput() {
     // progress for other destinations available, unless it is too
     // small to be worth transfer.
     for (auto& destination : destinations_) {
+      nvtx3::scoped_range loop_range2{"destination loop 2"};
       if (destination.get() == blockedDestination ||
           destination->serializedBytes() < kMinDestinationSize) {
         continue;
@@ -452,6 +463,7 @@ RowVectorPtr PartitionedOutput::getOutput() {
   // and hence does not need blocking.
   if (noMoreInput_) {
     for (auto& destination : destinations_) {
+      nvtx3::scoped_range loop_range2{"destination loop 3"};
       if (destination->isFinished()) {
         continue;
       }

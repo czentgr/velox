@@ -720,4 +720,7 @@ if(VELOX_ENABLE_GEO)
   velox_resolve_dependency(geos)
 endif()
 
+velox_set_source(nvtx3-cpp)
+velox_resolve_dependency(nvtx3-cpp 3.3.0)
+
 add_subdirectory(velox)

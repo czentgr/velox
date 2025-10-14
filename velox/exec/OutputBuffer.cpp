@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 #include "velox/exec/OutputBuffer.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/testutil/TestValue.h"
 #include "velox/core/QueryConfig.h"
 #include "velox/exec/Task.h"
@@ -47,6 +50,7 @@ void ArbitraryBuffer::getAvailablePageSizes(std::vector<int64_t>& out) const {
 
 std::vector<std::shared_ptr<SerializedPage>> ArbitraryBuffer::getPages(
     uint64_t maxBytes) {
+  NVTX3_FUNC_RANGE();
   if (maxBytes == 0 && !pages_.empty() && pages_.front() == nullptr) {
     // Always give out an end marker when this buffer is finished and fully
     // consumed.  When multiple `DestinationBuffer' polling the same
@@ -114,6 +118,7 @@ DestinationBuffer::Data DestinationBuffer::getData(
     DataAvailableCallback notify,
     DataConsumerActiveCheckCallback activeCheck,
     ArbitraryBuffer* arbitraryBuffer) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_GE(
       sequence, sequence_, "Get received for an already acknowledged item");
   if (arbitraryBuffer != nullptr) {
@@ -344,6 +349,7 @@ OutputBuffer::OutputBuffer(
 }
 
 void OutputBuffer::updateOutputBuffers(int numBuffers, bool noMoreBuffers) {
+  NVTX3_FUNC_RANGE();
   if (isPartitioned()) {
     VELOX_CHECK_EQ(buffers_.size(), numBuffers);
     VELOX_CHECK(noMoreBuffers);
@@ -355,6 +361,7 @@ void OutputBuffer::updateOutputBuffers(int numBuffers, bool noMoreBuffers) {
   bool isFinished;
   {
     std::lock_guard<std::mutex> l(mutex_);
+    nvtx3::mark("obtained lock");
 
     if (numBuffers > buffers_.size()) {
       addOutputBuffersLocked(numBuffers);
@@ -376,9 +383,11 @@ void OutputBuffer::updateOutputBuffers(int numBuffers, bool noMoreBuffers) {
 }
 
 void OutputBuffer::updateNumDrivers(uint32_t newNumDrivers) {
+  NVTX3_FUNC_RANGE();
   bool isNoMoreDrivers{false};
   {
     std::lock_guard<std::mutex> l(mutex_);
+    nvtx3::mark("obtained lock");
     numDrivers_ = newNumDrivers;
     // If we finished all drivers, ensure we register that we are 'done'.
     if (numDrivers_ == numFinished_) {
@@ -391,6 +400,7 @@ void OutputBuffer::updateNumDrivers(uint32_t newNumDrivers) {
 }
 
 void OutputBuffer::addOutputBuffersLocked(int numBuffers) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(!noMoreBuffers_);
   VELOX_CHECK(!isPartitioned());
   buffers_.reserve(numBuffers);
@@ -447,6 +457,7 @@ bool OutputBuffer::enqueue(
     int destination,
     std::unique_ptr<SerializedPage> data,
     ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NOT_NULL(data);
   VELOX_CHECK(
       task_->isRunning(), "Task is terminated, cannot add data to output.");
@@ -455,6 +466,7 @@ bool OutputBuffer::enqueue(
   {
     std::lock_guard<std::mutex> l(mutex_);
     VELOX_CHECK_LT(destination, buffers_.size());
+    nvtx3::mark("obtained lock");
 
     updateStatsWithEnqueuedPageLocked(data->size(), data->numRows().value());
 
@@ -631,10 +643,12 @@ bool OutputBuffer::isFinishedLocked() {
 }
 
 void OutputBuffer::acknowledge(int destination, int64_t sequence) {
+  NVTX3_FUNC_RANGE();
   std::vector<std::shared_ptr<SerializedPage>> freed;
   std::vector<ContinuePromise> promises;
   {
     std::lock_guard<std::mutex> l(mutex_);
+    nvtx3::mark("obtained lock");
     VELOX_CHECK_LT(destination, buffers_.size());
     auto* buffer = buffers_[destination].get();
     if (!buffer) {
@@ -673,12 +687,14 @@ void OutputBuffer::updateAfterAcknowledgeLocked(
 }
 
 bool OutputBuffer::deleteResults(int destination) {
+  NVTX3_FUNC_RANGE();
   std::vector<std::shared_ptr<SerializedPage>> freed;
   std::vector<ContinuePromise> promises;
   bool isFinished;
   DataAvailable dataAvailable;
   {
     std::lock_guard<std::mutex> l(mutex_);
+    nvtx3::mark("obtained lock");
     VELOX_CHECK_LT(destination, buffers_.size());
     auto* buffer = buffers_[destination].get();
     if (buffer == nullptr) {
@@ -716,12 +732,13 @@ void OutputBuffer::getData(
     int64_t sequence,
     DataAvailableCallback notify,
     DataConsumerActiveCheckCallback activeCheck) {
+  NVTX3_FUNC_RANGE();
   DestinationBuffer::Data data;
   std::vector<std::shared_ptr<SerializedPage>> freed;
   std::vector<ContinuePromise> promises;
   {
     std::lock_guard<std::mutex> l(mutex_);
-
+    nvtx3::mark("obtained lock");
     if (!isPartitioned() && destination >= buffers_.size()) {
       addOutputBuffersLocked(destination + 1);
     }
@@ -747,11 +764,13 @@ void OutputBuffer::getData(
 }
 
 void OutputBuffer::terminate() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(!task_->isRunning());
 
   std::vector<ContinuePromise> outstandingPromises;
   {
     std::lock_guard<std::mutex> l(mutex_);
+    nvtx3::mark("obtained lock");
     outstandingPromises.swap(promises_);
   }
   for (auto& promise : outstandingPromises) {

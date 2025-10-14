@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/HashProbe.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/base/Counters.h"
 #include "velox/common/base/StatsReporter.h"
 #include "velox/common/testutil/TestValue.h"
@@ -136,6 +139,7 @@ HashProbe::HashProbe(
 }
 
 void HashProbe::initialize() {
+  NVTX3_FUNC_RANGE();
   Operator::initialize();
 
   VELOX_CHECK(hashers_.empty());
@@ -192,6 +196,7 @@ void HashProbe::initializeFilter(
     const core::TypedExprPtr& filter,
     const RowTypePtr& probeType,
     const RowTypePtr& tableType) {
+  NVTX3_FUNC_RANGE();
   std::vector<core::TypedExprPtr> filters = {filter};
   filter_ =
       std::make_unique<ExprSet>(std::move(filters), operatorCtx_->execCtx());
@@ -405,6 +410,7 @@ void HashProbe::pushdownDynamicFilters() {
 }
 
 void HashProbe::asyncWaitForHashTable() {
+  NVTX3_FUNC_RANGE();
   checkRunning();
   VELOX_CHECK_NULL(table_);
 
@@ -478,6 +484,7 @@ bool HashProbe::isSpillInput() const {
 }
 
 void HashProbe::prepareForSpillRestore() {
+  NVTX3_FUNC_RANGE();
   checkRunning();
   VELOX_CHECK(canSpill());
   VELOX_CHECK(hasMoreSpillData());
@@ -508,6 +515,7 @@ void HashProbe::prepareForSpillRestore() {
 }
 
 void HashProbe::wakeupPeerOperators() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(lastProber_);
   auto promises = std::move(promises_);
   for (auto& promise : promises) {
@@ -517,6 +525,7 @@ void HashProbe::wakeupPeerOperators() {
 }
 
 std::vector<HashProbe*> HashProbe::findPeerOperators() {
+  NVTX3_FUNC_RANGE();
   auto task = operatorCtx_->task();
   const std::vector<Operator*> operators =
       task->findPeerOperators(operatorCtx_->driverCtx()->pipelineId, this);
@@ -530,6 +539,7 @@ std::vector<HashProbe*> HashProbe::findPeerOperators() {
 }
 
 void HashProbe::addSpillInput() {
+  NVTX3_FUNC_RANGE();
   checkRunning();
 
   if (input_ != nullptr || noMoreSpillInput_) {
@@ -544,6 +554,7 @@ void HashProbe::addSpillInput() {
 }
 
 void HashProbe::spillInput(RowVectorPtr& input) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(needToSpillInput());
 
   const auto numInputRows = input->size();
@@ -591,6 +602,7 @@ void HashProbe::spillInput(RowVectorPtr& input) {
 void HashProbe::prepareInputIndicesBuffers(
     vector_size_t numInput,
     const SpillPartitionIdSet& spillPartitionIds) {
+  NVTX3_FUNC_RANGE();
   VELOX_DCHECK(canSpill());
   const auto maxIndicesBufferBytes = numInput * sizeof(vector_size_t);
   if (nonSpillInputIndicesBuffer_ == nullptr ||
@@ -619,8 +631,10 @@ void HashProbe::prepareInputIndicesBuffers(
 }
 
 BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   switch (state_) {
     case ProbeOperatorState::kWaitForBuild:
+      nvtx3::mark("ProbeOperatorState::kWaitForBuild");
       VELOX_CHECK_NULL(table_);
       if (!future_.valid()) {
         setRunning();
@@ -628,18 +642,21 @@ BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
       }
       break;
     case ProbeOperatorState::kRunning:
+      nvtx3::mark("ProbeOperatorState::kRunning");
       VELOX_CHECK_NOT_NULL(table_);
       if (spillInputReader_ != nullptr) {
         addSpillInput();
       }
       break;
     case ProbeOperatorState::kWaitForPeers:
+      nvtx3::mark("ProbeOperatorState::kWaitForPeers");
       VELOX_CHECK(canSpill());
       if (!future_.valid()) {
         setRunning();
       }
       break;
     case ProbeOperatorState::kFinish:
+      nvtx3::mark("ProbeOperatorState::kFinish");
       break;
     default:
       VELOX_UNREACHABLE(probeOperatorStateName(state_));
@@ -654,6 +671,7 @@ BlockingReason HashProbe::isBlocked(ContinueFuture* future) {
 }
 
 void HashProbe::decodeAndDetectNonNullKeys() {
+  NVTX3_FUNC_RANGE();
   nonNullInputRows_.resize(input_->size());
   nonNullInputRows_.setAll();
 
@@ -670,6 +688,7 @@ void HashProbe::decodeAndDetectNonNullKeys() {
 }
 
 void HashProbe::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   if (skipInput_) {
     VELOX_CHECK_NULL(input_);
     return;
@@ -773,6 +792,7 @@ void HashProbe::addInput(RowVectorPtr input) {
 }
 
 void HashProbe::prepareOutput(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   // Try to re-use memory for the output vectors that contain build-side data.
   // We expect output vectors containing probe-side data to be null (reset in
   // clearIdentityProjectedOutput). BaseVector::prepareForReuse keeps null
@@ -794,6 +814,7 @@ VectorPtr createConstantFalse(vector_size_t size, memory::MemoryPool* pool) {
 } // namespace
 
 void HashProbe::fillLeftSemiProjectMatchColumn(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   if (emptyBuildSide()) {
     // Build side is empty or all rows have null join keys.
     if (nullAware_ && buildSideHasNullKeys_) {
@@ -839,6 +860,7 @@ void HashProbe::fillLeftSemiProjectMatchColumn(vector_size_t size) {
 }
 
 void HashProbe::fillOutput(vector_size_t size) {
+  NVTX3_FUNC_RANGE();
   prepareOutput(size);
 
   for (auto [in, out] : projectedInputColumns_) {
@@ -863,6 +885,7 @@ void HashProbe::fillOutput(vector_size_t size) {
 }
 
 RowVectorPtr HashProbe::getBuildSideOutput() {
+  NVTX3_FUNC_RANGE();
   auto* outputTableRows =
       initBuffer<char*>(outputTableRows_, outputTableRowsCapacity_, pool());
   int32_t numOut;
@@ -926,6 +949,7 @@ RowVectorPtr HashProbe::getBuildSideOutput() {
 }
 
 void HashProbe::clearProjectedOutput() {
+  NVTX3_FUNC_RANGE();
   if (!output_ || output_.use_count() != 1) {
     return;
   }
@@ -970,11 +994,14 @@ bool HashProbe::needToSpillInput() const {
 }
 
 void HashProbe::setState(ProbeOperatorState state) {
+  NVTX3_FUNC_RANGE();
   checkStateTransition(state);
+  nvtx3::mark(probeOperatorStateName(state));
   state_ = state;
 }
 
 void HashProbe::checkStateTransition(ProbeOperatorState state) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NE(state_, state);
   switch (state) {
     case ProbeOperatorState::kRunning:
@@ -1001,6 +1028,7 @@ void HashProbe::checkStateTransition(ProbeOperatorState state) {
 }
 
 RowVectorPtr HashProbe::getOutput() {
+  NVTX3_FUNC_RANGE();
   // Release the extra unused memory reserved for output processing.
   SCOPE_EXIT {
     pool()->release();

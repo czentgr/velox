@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 #include "velox/exec/TableScan.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/testutil/TestValue.h"
 #include "velox/common/time/Timer.h"
 #include "velox/exec/Task.h"
@@ -119,6 +122,7 @@ bool TableScan::shouldStop(StopReason taskStopReason) const {
 }
 
 RowVectorPtr TableScan::getOutput() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(!blockingFuture_.valid());
   blockingReason_ = BlockingReason::kNotBlocked;
 
@@ -134,6 +138,7 @@ RowVectorPtr TableScan::getOutput() {
 
   const auto startTimeMs = getCurrentTimeMs();
   for (;;) {
+    nvtx3::scoped_range loop_range{"main loop"};
     // Check if our Task needs us to yield or we've been running for too long
     // w/o producing a result. In this case we return with the Yield blocking
     // reason and an already fulfilled future.
@@ -145,12 +150,14 @@ RowVectorPtr TableScan::getOutput() {
       // A point for test code injection.
       TestValue::adjust(
           "facebook::velox::exec::TableScan::getOutput::yield", this);
+      nvtx3::mark("yield");
       return nullptr;
     }
 
     // Check no more split.
     if (noMoreSplits_) {
       VELOX_CHECK(needNewSplit_);
+      nvtx3::mark("noMoreSplits");
       return nullptr;
     }
 
@@ -158,10 +165,12 @@ RowVectorPtr TableScan::getOutput() {
     // hit the check in Driver.
     if (operatorCtx_->task()->isCancelled()) {
       VELOX_CHECK(needNewSplit_);
+      nvtx3::mark("isCancelled");
       return nullptr;
     }
 
     if (hasDrained()) {
+      nvtx3::mark("hasDrained");
       return nullptr;
     }
 
@@ -172,10 +181,12 @@ RowVectorPtr TableScan::getOutput() {
          &debugString_});
 
     if (needNewSplit_) {
+      nvtx3::mark("needNewSplit");
       const auto hasNewSplit = getSplit();
       if (!hasNewSplit) {
         VELOX_CHECK(needNewSplit_);
         if (blockingReason_ != BlockingReason::kNotBlocked) {
+          nvtx3::mark("blocked");
           return nullptr;
         }
         continue;
@@ -186,7 +197,7 @@ RowVectorPtr TableScan::getOutput() {
 
     const auto estimatedRowSize = dataSource_->estimatedRowSize();
     // TODO: Expose this to operator stats.
-    VLOG(1) << "estimatedRowSize = " << estimatedRowSize;
+    VLOG(10) << "estimatedRowSize = " << estimatedRowSize;
     readBatchSize_ = estimatedRowSize == connector::DataSource::kUnknownRowSize
         ? outputBatchRows()
         : outputBatchRows(estimatedRowSize);
@@ -281,6 +292,7 @@ RowVectorPtr TableScan::getOutput() {
 }
 
 bool TableScan::getSplit() {
+  NVTX3_FUNC_RANGE();
   // A point for test code injection.
   TestValue::adjust("facebook::velox::exec::TableScan::getSplit", this);
 
@@ -422,6 +434,7 @@ void TableScan::tryScaleUp() {
 
 void TableScan::preload(
     const std::shared_ptr<connector::ConnectorSplit>& split) {
+  NVTX3_FUNC_RANGE();
   // The AsyncSource returns a unique_ptr to the shared_ptr of the
   // DataSource. The callback may outlive the Task, hence it captures
   // a shared_ptr to it. This is required to keep memory pools live

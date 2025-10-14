@@ -15,6 +15,9 @@
  */
 
 #include "velox/exec/HashBuild.h"
+
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/common/base/Counters.h"
 #include "velox/common/base/StatsReporter.h"
 #include "velox/common/testutil/TestValue.h"
@@ -308,6 +311,7 @@ void HashBuild::removeInputRowsForAntiJoinFilter() {
 }
 
 void HashBuild::addInput(RowVectorPtr input) {
+  nvtx3::scoped_range kNext{"HashBuild::addInput"};
   checkRunning();
   ensureInputFits(input);
 

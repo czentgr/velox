@@ -15,6 +15,8 @@
  */
 #include "velox/exec/IndexLookupJoin.h"
 
+#include "nvtx3/nvtx3.hpp"
+
 #include "velox/buffer/Buffer.h"
 #include "velox/connectors/Connector.h"
 #include "velox/exec/OperatorUtils.h"
@@ -212,6 +214,7 @@ void IndexLookupJoin::initInputBatches() {
 }
 
 void IndexLookupJoin::initLookupInput() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NULL(lookupInputType_);
   VELOX_CHECK(lookupInputChannels_.empty());
 
@@ -318,6 +321,7 @@ void IndexLookupJoin::initLookupInput() {
 }
 
 void IndexLookupJoin::initLookupOutput() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NULL(lookupOutputType_);
 
   std::vector<std::string> lookupOutputNames;
@@ -344,6 +348,7 @@ void IndexLookupJoin::initLookupOutput() {
 }
 
 void IndexLookupJoin::initOutputProjections() {
+  NVTX3_FUNC_RANGE();
   for (auto i = 0; i < probeType_->size(); ++i) {
     const auto name = probeType_->nameOf(i);
     const auto outputChannelOpt = outputType_->getChildIdxIfExists(name);
@@ -382,6 +387,7 @@ void IndexLookupJoin::initOutputProjections() {
 }
 
 void IndexLookupJoin::initFilter() {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_NULL(filter_);
 
   if (joinNode_->filter() == nullptr) {
@@ -450,6 +456,7 @@ bool IndexLookupJoin::needsInput() const {
 }
 
 BlockingReason IndexLookupJoin::isBlocked(ContinueFuture* future) {
+  NVTX3_FUNC_RANGE();
   auto& batch = currentInputBatch();
   if (!batch.lookupFuture.valid()) {
     endLookupBlockWait();
@@ -485,6 +492,7 @@ void IndexLookupJoin::endLookupBlockWait() {
 }
 
 void IndexLookupJoin::addInput(RowVectorPtr input) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_GT(input->size(), 0);
   auto& batch = nextInputBatch();
   VELOX_CHECK_LE(numInputBatches(), maxNumInputBatches_);
@@ -496,6 +504,7 @@ void IndexLookupJoin::addInput(RowVectorPtr input) {
 }
 
 RowVectorPtr IndexLookupJoin::getOutput() {
+  NVTX3_FUNC_RANGE();
   SCOPE_EXIT {
     if (numInputBatches() == 0 && isDraining()) {
       finishDrain();
@@ -622,6 +631,7 @@ void IndexLookupJoin::startLookup(InputBatchState& batch) {
 
 RowVectorPtr IndexLookupJoin::getOutputFromLookupResult(
     InputBatchState& batch) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK(!batch.empty());
   VELOX_CHECK(!batch.lookupFuture.valid() || batch.lookupFuture.isReady());
   batch.lookupFuture = ContinueFuture::makeEmpty();
@@ -791,6 +801,7 @@ void IndexLookupJoin::prepareOutput(vector_size_t numOutputRows) {
 
 RowVectorPtr IndexLookupJoin::produceOutputForInnerJoin(
     const InputBatchState& batch) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_EQ(joinType_, core::JoinType::kInner);
   VELOX_CHECK_NOT_NULL(batch.lookupResult);
   VELOX_CHECK_LE(nextOutputResultRow_, batch.lookupResult->size());
@@ -852,6 +863,7 @@ void IndexLookupJoin::fillOutputMatchRows(
 
 RowVectorPtr IndexLookupJoin::produceOutputForLeftJoin(
     const InputBatchState& batch) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_EQ(joinType_, core::JoinType::kLeft);
   VELOX_CHECK_NOT_NULL(batch.lookupResult);
   VELOX_CHECK_LE(nextOutputResultRow_, batch.lookupResult->size());
@@ -1006,6 +1018,7 @@ void IndexLookupJoin::setMatchColumnSize(vector_size_t numOutputRows) {
 
 RowVectorPtr IndexLookupJoin::produceRemainingOutputForLeftJoin(
     const InputBatchState& batch) {
+  NVTX3_FUNC_RANGE();
   VELOX_CHECK_EQ(joinType_, core::JoinType::kLeft);
   VELOX_CHECK(!batch.empty());
   VELOX_CHECK(hasRemainingOutputForLeftJoin(batch));
