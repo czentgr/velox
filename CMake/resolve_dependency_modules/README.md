@@ -32,11 +32,11 @@ by Velox. See details on bundling below.
 | fmt               | 10.1.1          | Yes      |
 | simdjson          | 3.13.0          | Yes      |
 | faiss             | 1.11.0          | Yes      |
-| folly             | v2025.04.28.00  | Yes      |
-| fizz              | v2025.04.28.00  | No       |
-| wangle            | v2025.04.28.00  | No       |
-| mvfst             | v2025.04.28.00  | No       |
-| fbthrift          | v2025.04.28.00  | No       |
+| folly             | v2025.09.15.00  | Yes      |
+| fizz              | v2025.09.15.00  | No       |
+| wangle            | v2025.09.15.00  | No       |
+| mvfst             | v2025.09.15.00  | No       |
+| fbthrift          | v2025.09.15.00  | No       |
 | libstemmer        | 2.2.0           | Yes      |
 | DuckDB (testing)  | 0.8.1           | Yes      |
 | cpr (testing)     | 1.10.15         | Yes      |
