@@ -1144,17 +1144,18 @@ std::string OutputBuffer::toString() {
   buffers_.withRLock([&](auto& buffers) {
     // VLOG(4) << this << " OutputBuffer::toString() acquired buffers_ read
     // lock";
-    out << this << "[OutputBuffer[" << kind_ << "] bufferedBytes_="
+    out << this << std::endl << "  [OutputBuffer[" << kind_ << "] bufferedBytes_="
         << bufferedBytes_
         //        << "b, num producers blocked=" << promises_.rlock()->size()
-        << ", completed=" << numFinished_ << "/" << numDrivers_
-        << ", atEnd_: " << atEnd_ << "destinations: " << std::endl;
+        << ",maxSize_=" << maxSize_ << ",continueSize_=" << continueSize_ <<",numberOfBuffers=" << buffers.size()
+        << ",completed=" << numFinished_ << "/" << numDrivers_
+        << ",atEnd_=" << atEnd_ << std::endl << " destinations: " << std::endl;
     for (auto i = 0; i < buffers.size(); ++i) {
       auto buffer = buffers[i].get();
-      out << i << ": " << (buffer ? buffer->toString() : "none") << std::endl;
+      out << "    " << i << ": " << (buffer ? buffer->toString() : "none") << std::endl;
     }
     if (isArbitrary()) {
-      out << arbitraryBuffer_->toString();
+      out << "    arbitraryBuffer: " << arbitraryBuffer_->toString();
     }
     // VLOG(4) << this << " OutputBuffer::toString() released buffers_ read
     // lock";
