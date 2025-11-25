@@ -209,8 +209,8 @@ void DestinationBuffer::getData(
 void DestinationBuffer::enqueue(
     const std::vector<std::shared_ptr<SerializedPageBase>>& newPages,
     const ArbitraryBuffer* arbitraryBuffer) {
-  // VLOG(3) << this << " DestinationBuffer::enqueue begin. newPages: "
-  //          << printPageSizes(newPages) << ", this: " << this->toString();
+  VLOG(1) << this << " DestinationBuffer::enqueue begin. newPages: "
+            << printPageSizes(newPages) << ", this: " << this->toString();
 
   // Drop duplicate end markers. Early return with reader lock.
   std::shared_ptr<PendingRead> oldPendingRead = nullptr;
