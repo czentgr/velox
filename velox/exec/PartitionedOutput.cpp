@@ -102,7 +102,7 @@ BlockingReason Destination::advance(
   if (rowIdx_ == rows_.size()) {
     *atEnd = true;
   }
-  return BlockingReason::kNotBlocked;
+  return blockingReason;
 }
 
 BlockingReason Destination::flush(
@@ -299,9 +299,8 @@ void PartitionedOutput::estimateRowSizes() {
 
 void PartitionedOutput::addInput(RowVectorPtr input) {
   numReceivedPages++;
-  if (numReceivedPages == 1) {
-    VLOG(1) << "PartitionedOutput addInput received first input";
-  }
+  VLOG(1) << "PartitionedOutput[" << planNodeId() << "] addInput received input. numReceivedPages[" << numReceivedPages << "] added numRows[" << input->size() << "]";
+
   initializeInput(std::move(input));
   initializeDestinations();
   initializeSizeBuffers();
@@ -386,6 +385,7 @@ void PartitionedOutput::collectNullRows() {
 
 RowVectorPtr PartitionedOutput::getOutput() {
   if (finished_) {
+    VLOG(1) << "PartitionedOutput::getOutput[" << planNodeId() << "] finished.";
     return nullptr;
   }
 
@@ -447,6 +447,7 @@ RowVectorPtr PartitionedOutput::getOutput() {
   // All of 'output_' is written into the destinations. We are finishing, hence
   // move all the destinations to the output queue. This will not grow memory
   // and hence does not need blocking.
+  VLOG(1) << "PartitionedOutput::getOutput[" << planNodeId() << "] noMoreInput_: " << noMoreInput_;
   if (noMoreInput_) {
     for (auto& destination : destinations_) {
       if (destination->isFinished()) {
