@@ -308,14 +308,15 @@ void DestinationBuffer::addPages(
 std::vector<std::shared_ptr<SerializedPageBase>> DestinationBuffer::acknowledge(
     int64_t sequence,
     bool fromGetData) {
-  // VLOG(3) << this << " DestinationBuffer::acknowledge begin."
-  //          << " sequence: " << sequence << " fromGetData: " << fromGetData
-  //          << " this: " << this->toString();
+  VLOG(1) << this << " DestinationBuffer::acknowledge begin."
+          << " sequence: " << sequence << " fromGetData: " << fromGetData
+          << " this: " << this->toString();
 
   // Early return with read lock
   bool isValidRequest = true;
   data_.withRLock([&](auto& data) {
     if (finished_ || !validateSequenceNumberLocked(sequence, fromGetData)) {
+      VLOG(1) << this << " DestinationBuffer::acknowledge invalid";
       isValidRequest = false;
     }
   });
@@ -329,6 +330,7 @@ std::vector<std::shared_ptr<SerializedPageBase>> DestinationBuffer::acknowledge(
     //          << " DestinationBuffer::acknowledge() acquired data_ write
     //          lock";
     if (finished_ || !validateSequenceNumberLocked(sequence, fromGetData)) {
+      VLOG(1) << this << " DestinationBuffer::acknowledge invalid2";
       return;
     }
 
@@ -347,15 +349,14 @@ std::vector<std::shared_ptr<SerializedPageBase>> DestinationBuffer::acknowledge(
     }
     data.erase(data.begin(), data.begin() + numDeleted);
     sequence_ += numDeleted;
-
     // VLOG(4) << this
     //          << " DestinationBuffer::acknowledge() released data_ write
     //          lock";
   });
 
-  // VLOG(3) << this << " DestinationBuffer::acknowledge end."
-  //          << " freed.size(): " << freed.size() << " this: " <<
-  //          this->toString();
+  VLOG(1) << this << " DestinationBuffer::acknowledge end."
+          << " freed.size(): " << freed.size() << " this: " <<
+          this->toString();
 
   return freed;
 }
@@ -426,8 +427,8 @@ std::string DestinationBuffer::toString() {
     //    }
     out << ", sequence: " << sequence_ << ", pendingRead_: "
         << (pendingRead_ ? pendingRead_->toString() : "null")
-        << " finished_: " << finished_ << "]";
-
+        << " finished_: " << finished_ << ", bytesBuffered_: " << bytesBuffered_
+        << ", rowsBuffered_: " << rowsBuffered_ << "]";
     // VLOG(4) << this << " DestinationBuffer::toString released data_ read
     // Lock";
   });
@@ -771,6 +772,7 @@ bool OutputBuffer::enqueue(
       *future = promises.back().getSemiFuture();
       // VLOG(4) << "OutputBuffer::enqueue released promises_ write Lock";
     });
+    VLOG(1) << this << " OutputBuffer::enqueue - blocked - bufferedBytes_ >= maxSize_";
     blocked = true;
   }
 
@@ -801,7 +803,9 @@ void OutputBuffer::enqueueBroadcastOutput(
   });
   // NOTE: we don't need to add new buffer to 'dataToBroadcast_' if there is
   // no more output buffers.
-  dataToBroadcast_.emplace_back(sharedData);
+  if (!noMoreBuffers_) {
+    dataToBroadcast_.emplace_back(sharedData);
+  }
 }
 
 void OutputBuffer::enqueueArbitraryOutput(
@@ -1010,6 +1014,10 @@ void OutputBuffer::updateAfterAcknowledge(
       freedBytes += free->size();
     }
   }
+
+  VLOG(1) << this << " OutputBuffer::updateAfterAcknowledge freeing "
+          << freedPages << " pages, " << freedBytes << " bytes";
+
   if (freedPages == 0) {
     VELOX_CHECK_EQ(freedBytes, 0);
     return;
