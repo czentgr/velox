@@ -304,8 +304,10 @@ DestinationBuffer::Stats DestinationBuffer::stats() const {
 
 std::string DestinationBuffer::toString() {
   std::stringstream out;
-  out << "[available: " << data_.size() << ", " << "sequence: " << sequence_
-      << ", " << (notify_ ? "notify registered, " : "") << this << "]";
+  out << "[ " << this << " available: " << data_.size() << ", " << "sequence: " << sequence_
+      << ", " << (notify_ ? "notify registered, " : "")
+      << ", buffered bytes: " << stats_.bytesBuffered
+      << "]";
   return out.str();
 }
 
@@ -345,12 +347,17 @@ OutputBuffer::OutputBuffer(
 }
 
 void OutputBuffer::updateOutputBuffers(int numBuffers, bool noMoreBuffers) {
+  VLOG(1) << "OutputBuffer::updateOutputBuffers begin "
+          << ", numBuffers: " << numBuffers
+          << ", noMoreBuffers: " << std::boolalpha << noMoreBuffers
+          << toString();
   if (isPartitioned()) {
     VELOX_CHECK_EQ(buffers_.size(), numBuffers);
     VELOX_CHECK(noMoreBuffers);
     noMoreBuffers_ = true;
     return;
   }
+
 
   std::vector<ContinuePromise> promises;
   bool isFinished;
@@ -374,6 +381,8 @@ void OutputBuffer::updateOutputBuffers(int numBuffers, bool noMoreBuffers) {
   if (isFinished) {
     task_->setAllOutputConsumed();
   }
+  VLOG(1) << "OutputBuffer::updateOutputBuffers end "
+          << toString();
 }
 
 void OutputBuffer::updateNumDrivers(uint32_t newNumDrivers) {
@@ -394,6 +403,9 @@ void OutputBuffer::updateNumDrivers(uint32_t newNumDrivers) {
 void OutputBuffer::addOutputBuffersLocked(int numBuffers) {
   VELOX_CHECK(!noMoreBuffers_);
   VELOX_CHECK(!isPartitioned());
+  VLOG(1) << "OutputBuffer::addOutputBuffersLocked called with numBuffers: "
+          << numBuffers
+          << ", current buffers size: " << buffers_.size();
   buffers_.reserve(numBuffers);
   for (int32_t i = buffers_.size(); i < numBuffers; ++i) {
     auto buffer = std::make_unique<DestinationBuffer>();
@@ -498,6 +510,10 @@ void OutputBuffer::enqueueBroadcastOutputLocked(
   VELOX_DCHECK(isBroadcast());
   VELOX_CHECK_NULL(arbitraryBuffer_);
   VELOX_DCHECK(dataAvailableCbs.empty());
+  VLOG(1) << "OutputBuffer::enqueueBroadcastOutputLocked called"
+          << ", noMoreBuffers_: " << std::boolalpha << noMoreBuffers_
+          << ", buffers_ size: " << buffers_.size()
+          << ", dataToBroadcast_ size: " << dataToBroadcast_.size();
 
   std::shared_ptr<SerializedPageBase> sharedData(data.release());
   for (auto& buffer : buffers_) {
@@ -654,12 +670,17 @@ void OutputBuffer::updateAfterAcknowledgeLocked(
     std::vector<ContinuePromise>& promises) {
   uint64_t freedBytes{0};
   int freedPages{0};
+  VLOG(1) << "OutputBuffer::updateAfterAcknowledgeLocked called"
+          << ", freed size: " << freed.size();
   for (const auto& free : freed) {
     if (free.use_count() == 1) {
       ++freedPages;
       freedBytes += free->size();
     }
   }
+  VLOG(1) << "OutputBuffer::updateAfterAcknowledgeLocked freedPages: " << freedPages
+          << ", freedBytes: " << freedBytes
+          << ", dataToBroadcast_ size: " << dataToBroadcast_.size();
   if (freedPages == 0) {
     VELOX_CHECK_EQ(freedBytes, 0);
     return;
@@ -720,6 +741,11 @@ void OutputBuffer::getData(
   DestinationBuffer::Data data;
   std::vector<std::shared_ptr<SerializedPageBase>> freed;
   std::vector<ContinuePromise> promises;
+
+  VLOG(1) << "OutputBuffer::getData begin "
+          << " destination: " << destination
+          << " sequence: " << sequence
+          << toString();
   {
     std::lock_guard<std::mutex> l(mutex_);
 
@@ -731,6 +757,9 @@ void OutputBuffer::getData(
     auto* buffer = buffers_[destination].get();
     if (buffer) {
       freed = buffer->acknowledge(sequence, true);
+      VLOG(1) << "OutputBuffer::getData after acknowledge "
+              << " freed size: " << freed.size()
+              << " dataToBroadcast_ size: " << dataToBroadcast_.size();
       updateAfterAcknowledgeLocked(freed, promises);
       data = buffer->getData(
           maxBytes, sequence, notify, activeCheck, arbitraryBuffer_.get());
@@ -745,6 +774,8 @@ void OutputBuffer::getData(
   if (data.immediate) {
     notify(std::move(data.data), sequence, std::move(data.remainingBytes));
   }
+  VLOG(1) << "OutputBuffer::getData end "
+          << toString();
 }
 
 void OutputBuffer::terminate() {
