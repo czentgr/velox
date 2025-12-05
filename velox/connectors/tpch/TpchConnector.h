@@ -26,7 +26,9 @@
 
 namespace facebook::velox::connector::tpch {
 
+class TpchConfig;
 class TpchConnector;
+
 
 // TPC-H column handle only needs the column name (all columns are generated in
 // the same way).
@@ -179,6 +181,9 @@ class TpchConnector final : public Connector {
       CommitStrategy /*commitStrategy*/) override final {
     VELOX_NYI("TpchConnector does not support data sink.");
   }
+
+  protected:
+    const std::shared_ptr<TpchConfig> tpchConfig_;
 };
 
 class TpchConnectorFactory : public ConnectorFactory {
