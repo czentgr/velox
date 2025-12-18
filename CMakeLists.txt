@@ -659,9 +659,12 @@ if(VELOX_ENABLE_GCS)
 endif()
 
 # GCC needs to link a library to enable std::filesystem.
+# GCC needs to enable co-routines. We only support compiler that
+# support coroutines.
 if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
   # Find Threads library
   find_package(Threads REQUIRED)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fcoroutines>)
 endif()
 
 if(VELOX_BUILD_TESTING AND NOT VELOX_ENABLE_DUCKDB)
