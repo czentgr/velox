@@ -89,8 +89,10 @@ def tidy(args):
         print("compile_commands.json not found, skipping clang-tidy")
         return 0
 
+    print(f"xargs clang-tidy --format-style=file -header-filter='.*' {build_path_str} {fix} {lines}")
+    print("Running command ...")
     status, stdout, stderr = util.run(
-        f"xargs clang-tidy --format-style=file -header-filter='.*' --quiet {build_path_str} {fix} {lines}",
+        f"xargs clang-tidy --format-style=file -header-filter='.*' {build_path_str} {fix} {lines}",
         input=filtered_files,
     )
 
@@ -98,8 +100,9 @@ def tidy(args):
         clang_tidy_pattern = (
             r"^(.*):(\d+):(\d+):\s+(error|warning):\s+(.*) \[([a-z0-9,\-]+)\]\s*$"
         )
-
+        print("PRINT STDOUT")
         for stdout_line in stdout.split("\n"):
+            print(stdout_line)
             m = re.match(clang_tidy_pattern, stdout_line)
             if m is not None:
                 file, line, col, severity, message, rule = m.groups()
@@ -109,6 +112,8 @@ def tidy(args):
                 )
 
     ok = check_output(stdout)
+    print("PRINT STDERR")
+    print(stderr)
 
     return 0 if ok else 1
 

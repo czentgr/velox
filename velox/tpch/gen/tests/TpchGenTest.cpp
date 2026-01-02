@@ -25,7 +25,7 @@ namespace {
 using namespace facebook::velox;
 using namespace facebook::velox::tpch;
 
-// Nation tests.
+// Nation table tests.
 
 class TpchGenTestNationTest : public testing::Test {
  protected:
