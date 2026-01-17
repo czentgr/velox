@@ -103,28 +103,35 @@ jobs:
           VELOX_ARROW_CMAKE_PATCH: ${{ github.workspace }}/CMake/resolve_dependency_modules/arrow/cmake-compatibility.patch
         run: |
           if git diff --name-only HEAD^1 HEAD | grep -q "scripts/setup-"; then
-            echo "Removing previous AWS SDK and s2n installations to avoid conflicts..."
-            rm -rf /usr/local/include/s2n /usr/local/lib64/s2n
-            rm -rf /usr/local/include/aws
+            #echo "Removing previous AWS SDK and s2n installations to avoid conflicts..."
+            #rm -rf /usr/local/include/s2n /usr/local/lib64/s2n
+            #rm -rf /usr/local/include/aws
             # Overwrite old setup scripts with changed versions
             cp scripts/setup-* /
-
+      
             mkdir /tmp/build
             cd /tmp/build
             source /opt/rh/gcc-toolset-12/enable
             # Install basic deps with GCC. Some deps have problems (e.g. folly missing atomic lib).
-            USE_CLANG=false bash /setup-centos9.sh
-
-            bash /setup-centos-adapters.sh
-
+            #USE_CLANG=false bash /setup-centos9.sh
+            source /setup-centos9.sh
+            dnf install libunwind-devel -y
+            # Reinstall FBOS deps with new folly using libunwind
+            install_folly
+            install_fizz
+            install_wangle
+            install_mvfst
+            install_fbthrift
+            #bash /setup-centos-adapters.sh
+      
             cd /
             rm -rf /tmp/build # cleanup to avoid issues with disk space
           fi
 
-      - uses: apache/infrastructure-actions/stash/restore@3354c1565d4b0e335b78a76aedd82153a9e144d4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-linux-adapters-${{ inputs.use-clang && 'clang' || 'gcc' }}
+      #- uses: apache/infrastructure-actions/stash/restore@3354c1565d4b0e335b78a76aedd82153a9e144d4
+      #  with:
+      #    path: ${{ env.CCACHE_DIR }}
+      #    key: ccache-linux-adapters-${{ inputs.use-clang && 'clang' || 'gcc' }}
 
       - name: Zero Ccache Statistics
         run: |
@@ -164,6 +171,8 @@ jobs:
           fi
           source /opt/rh/gcc-toolset-14/enable
           g++ --version
+          # thrift1 is linked against the libraries which are in /deps originally and then copied.
+          export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib:/usr/local/lib64
           # CC/CXX are set to GCC12 in the adapters image build and it needs to be overridden
           # after sourcing GCC14.
           CC=gcc CXX=g++ make release EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS[*]}"
