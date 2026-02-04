@@ -40,7 +40,13 @@ PrestoSerializedPage::PrestoSerializedPage(
 
 PrestoSerializedPage::~PrestoSerializedPage() {
   if (onDestructionCb_) {
-    onDestructionCb_(*iobuf_.get());
+    try {
+      onDestructionCb_(*iobuf_.get());
+    } catch (const std::exception& e) {
+      LOG(ERROR) << "Exception in onDestructionCb: " << e.what();
+    } catch (...) {
+      LOG(ERROR) << "Unknown exception in onDestructionCb";
+    }
   }
 }
 

@@ -752,7 +752,7 @@ void newKernel(PipelineCandidate& candidate) {
 
 bool isSink(const PipelineCandidate& candidate) {
   auto& level = candidate.steps.back();
-  bool result;
+  bool result = false;
   for (auto i = 0; i < level.size(); ++i) {
     auto& box = level[i];
     bool sink = !box.steps.empty() && box.steps.back()->isSink();

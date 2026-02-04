@@ -1060,10 +1060,11 @@ void HashTable<ignoreNullKeys>::parallelJoinBuild() {
   };
 
   const auto runStep = [&](auto& steps, auto&& work, bool runInCurrentThread) {
-    auto step = std::make_shared<AsyncSource<bool>>([work = std::move(work)] {
-      work();
-      return std::make_unique<bool>(true);
-    });
+    auto step = std::make_shared<AsyncSource<bool>>(
+        [work = std::forward<decltype(work)>(work)] {
+          work();
+          return std::make_unique<bool>(true);
+        });
     steps.push_back(step);
     if (runInCurrentThread) {
       step->prepare();
