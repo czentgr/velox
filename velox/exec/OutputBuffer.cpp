@@ -720,27 +720,51 @@ void OutputBuffer::getData(
   DestinationBuffer::Data data;
   std::vector<std::shared_ptr<SerializedPageBase>> freed;
   std::vector<ContinuePromise> promises;
+
+  // Get buffer pointer under lock, adding buffers if needed
+  DestinationBuffer* buffer = nullptr;
   {
     std::lock_guard<std::mutex> l(mutex_);
-
     if (!isPartitioned() && destination >= buffers_.size()) {
       addOutputBuffersLocked(destination + 1);
     }
-
     VELOX_CHECK_LT(destination, buffers_.size());
-    auto* buffer = buffers_[destination].get();
-    if (buffer) {
+    buffer = buffers_[destination].get();
+  }
+
+  if (!buffer) {
+    data.data.emplace_back(nullptr);
+    data.immediate = true;
+    VLOG(1) << "getData received after deleteResults for destination "
+            << destination << " and sequence " << sequence;
+    notify(std::move(data.data), sequence, std::move(data.remainingBytes));
+    return;
+  }
+
+  // Optimization: For size-only requests (maxBytes == 0) with non-arbitrary
+  // buffers, we can perform without holding the OutputBuffer mutex since
+  // DestinationBuffer operations are safe. For arbitrary buffers, we must
+  // hold the lock because ArbitraryBuffer is not thread-safe.
+  if (maxBytes == 0 && !isArbitrary()) {
+    data = buffer->getData(maxBytes, sequence, notify, activeCheck, nullptr);
+    if (data.immediate) {
+      notify(std::move(data.data), sequence, std::move(data.remainingBytes));
+    }
+    return;
+  }
+
+  // For actual data requests (maxBytes > 0) or arbitrary buffers,
+  // acknowledge and fetch under lock
+  {
+    std::lock_guard<std::mutex> l(mutex_);
+    if (maxBytes > 0) {
       freed = buffer->acknowledge(sequence, true);
       updateAfterAcknowledgeLocked(freed, promises);
-      data = buffer->getData(
-          maxBytes, sequence, notify, activeCheck, arbitraryBuffer_.get());
-    } else {
-      data.data.emplace_back(nullptr);
-      data.immediate = true;
-      VLOG(1) << "getData received after deleteResults for destination "
-              << destination << " and sequence " << sequence;
     }
+    data = buffer->getData(
+        maxBytes, sequence, notify, activeCheck, arbitraryBuffer_.get());
   }
+
   releaseAfterAcknowledge(freed, promises);
   if (data.immediate) {
     notify(std::move(data.data), sequence, std::move(data.remainingBytes));
