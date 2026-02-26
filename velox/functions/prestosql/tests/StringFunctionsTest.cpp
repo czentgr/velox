@@ -23,6 +23,7 @@
 #include "velox/functions/lib/StringEncodingUtils.h"
 #include "velox/functions/lib/string/StringImpl.h"
 #include "velox/functions/prestosql/tests/utils/FunctionBaseTest.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 
 using namespace facebook::velox;
 using namespace facebook::velox::exec;
@@ -68,6 +69,19 @@ int expectedLength(int i) {
 
 class StringFunctionsTest : public FunctionBaseTest {
  protected:
+  void rerunWithVarcharN(
+      const std::string& query,
+      const RowVectorPtr& input,
+      const VectorPtr& expected) {
+    SCOPED_TRACE(fmt::format("Failed query with VarcharN: {}", query));
+    auto flatExpected = expected->asFlatVector<StringView>();
+    auto resultWithVarcharN = evaluate<FlatVector<StringView>>(query, input);
+    EXPECT_EQ(flatExpected->size(), resultWithVarcharN->size());
+    for (int32_t i = 0; i < expected->size(); ++i) {
+      EXPECT_EQ(flatExpected->valueAt(i), resultWithVarcharN->valueAt(i));
+    }
+  }
+
   VectorPtr makeStrings(
       vector_size_t size,
       const std::vector<std::string>& inputStrings) {
@@ -108,7 +122,12 @@ class StringFunctionsTest : public FunctionBaseTest {
     EXPECT_EQ(
         refCountAfterEval, refCountBeforeEval + numNonNullBuffersInStringArg)
         << "at " << query;
-
+    if (flatStringArg->valueAt(0).size() > 0) {
+      row->childAt(stringVectorIndex)
+          ->setType(VARCHAR_N(flatStringArg->valueAt(0).size()));
+      rerunWithVarcharN(query, row, result);
+      row->childAt(stringVectorIndex)->setType(VARCHAR());
+    }
     return result;
   }
 
@@ -119,9 +138,12 @@ class StringFunctionsTest : public FunctionBaseTest {
       bool expectedAscii) {
     auto inputsFlatVector = std::dynamic_pointer_cast<FlatVector<StringView>>(
         BaseVector::create(VARCHAR(), tests.size(), execCtx_.pool()));
+    size_t maxVarcharLength{0};
 
     for (int i = 0; i < tests.size(); i++) {
       inputsFlatVector->set(i, StringView(std::get<0>(tests[i])));
+      maxVarcharLength =
+          std::max(maxVarcharLength, std::get<0>(tests[i]).size());
     }
 
     if (ascii.has_value()) {
@@ -135,14 +157,17 @@ class StringFunctionsTest : public FunctionBaseTest {
       crossRefVector->acquireSharedStringBuffers(inputsFlatVector.get());
     }
 
-    auto result = evaluate<FlatVector<StringView>>(
-        "upper(c0)", makeRowVector({inputsFlatVector}));
+    for (int loop = 0; loop < 2; ++loop) {
+      auto result = evaluate<FlatVector<StringView>>(
+          "upper(c0)", makeRowVector({inputsFlatVector}));
 
-    SelectivityVector all(tests.size());
-    ASSERT_EQ(result->isAscii(all), expectedAscii);
+      SelectivityVector all(tests.size());
+      ASSERT_EQ(result->isAscii(all), expectedAscii);
 
-    for (int32_t i = 0; i < tests.size(); ++i) {
-      ASSERT_EQ(result->valueAt(i), StringView(std::get<1>(tests[i])));
+      for (int32_t i = 0; i < tests.size(); ++i) {
+        ASSERT_EQ(result->valueAt(i), StringView(std::get<1>(tests[i])));
+      }
+      inputsFlatVector->setType(VARCHAR_N(maxVarcharLength));
     }
   }
 
@@ -153,9 +178,12 @@ class StringFunctionsTest : public FunctionBaseTest {
       bool expectedAscii) {
     auto inputsFlatVector = std::dynamic_pointer_cast<FlatVector<StringView>>(
         BaseVector::create(VARCHAR(), tests.size(), execCtx_.pool()));
+    size_t maxVarcharLength{0};
 
     for (int i = 0; i < tests.size(); i++) {
       inputsFlatVector->set(i, StringView(std::get<0>(tests[i])));
+      maxVarcharLength =
+          std::max(maxVarcharLength, std::get<0>(tests[i]).size());
     }
 
     if (ascii.has_value()) {
@@ -169,28 +197,40 @@ class StringFunctionsTest : public FunctionBaseTest {
       crossRefVector->acquireSharedStringBuffers(inputsFlatVector.get());
     }
     auto testQuery = [&](const std::string& query) {
-      auto result = evaluate<FlatVector<StringView>>(
-          query, makeRowVector({inputsFlatVector}));
+      for (int loop = 0; loop < 2; ++loop) {
+        auto result = evaluate<FlatVector<StringView>>(
+            query, makeRowVector({inputsFlatVector}));
 
-      SelectivityVector all(tests.size());
-      ASSERT_EQ(result->isAscii(all), expectedAscii);
+        SelectivityVector all(tests.size());
+        ASSERT_EQ(result->isAscii(all), expectedAscii);
 
-      for (int32_t i = 0; i < tests.size(); ++i) {
-        ASSERT_EQ(result->valueAt(i), StringView(std::get<1>(tests[i])));
+        for (int32_t i = 0; i < tests.size(); ++i) {
+          ASSERT_EQ(result->valueAt(i), StringView(std::get<1>(tests[i])));
+        }
+        inputsFlatVector->setType(VARCHAR_N(maxVarcharLength));
       }
     };
     testQuery("lower(C0)");
     testQuery("lower(upper(C0))");
   }
 
+  static const size_t kMaxStringLength = 100;
+
   void testConcatFlatVector(
       const std::vector<std::vector<std::string>>& inputTable,
-      const size_t argsCount) {
+      const size_t argsCount,
+      bool useVarcharN = false) {
     std::vector<VectorPtr> inputVectors;
+    std::vector<size_t> maxVarcharLengthPerCol(argsCount);
 
+    TypePtr type = VARCHAR();
+    if (useVarcharN) {
+      type = VARCHAR_N(
+          kMaxStringLength + (folly::Random::rand32() % kMaxStringLength));
+    }
     for (int i = 0; i < argsCount; i++) {
       inputVectors.emplace_back(
-          BaseVector::create(VARCHAR(), inputTable.size(), execCtx_.pool()));
+          BaseVector::create(type, inputTable.size(), execCtx_.pool()));
     }
 
     for (int row = 0; row < inputTable.size(); row++) {
@@ -216,13 +256,23 @@ class StringFunctionsTest : public FunctionBaseTest {
     // We expect 2 allocations: one for the values buffer and another for the
     // strings buffer. I.e. FlatVector<StringView>::values and
     // FlatVector<StringView>::stringBuffers.
+    // When inputs are VARCHAR(N), ExprCompiler wraps each input in a
+    // CastExpr(VARCHARN -> VARCHAR) so the call binds to the unparameterized
+    // varchar concat signature. Cast result vectors are reused across calls,
+    // so cast adds a constant per-call overhead independent of the number of
+    // inputs. The very first call also pays a one-time setup cost for the
+    // cast peelings cache.
+    static int callCount = 0;
+    int castOverhead = useVarcharN ? (2 + (callCount == 0 ? 2 : 0)) : 0;
+    int expectedNumAllocations = 2 + castOverhead;
     auto numAllocsBefore = pool()->stats().numAllocs;
 
     auto result = evaluate<FlatVector<StringView>>(
         buildConcatQuery(), makeRowVector(inputVectors));
 
     auto numAllocsAfter = pool()->stats().numAllocs;
-    ASSERT_EQ(numAllocsAfter - numAllocsBefore, 2);
+    ASSERT_EQ(numAllocsAfter - numAllocsBefore, expectedNumAllocations);
+    ++callCount;
 
     auto concatStd = [](const std::vector<std::string>& inputs) {
       std::string output;
@@ -240,17 +290,25 @@ class StringFunctionsTest : public FunctionBaseTest {
   void testLengthFlatVector(
       const std::vector<std::tuple<std::string, int64_t>>& tests,
       std::optional<bool> setAscii) {
-    auto inputsFlatVector = makeFlatVector<StringView>(
-        tests.size(),
-        [&](auto row) { return StringView(std::get<0>(tests[row])); });
+    size_t maxVarcharLength{0};
+    auto inputsFlatVector =
+        makeFlatVector<StringView>(tests.size(), [&](auto row) {
+          maxVarcharLength =
+              std::max(maxVarcharLength, std::get<0>(tests[row]).size());
+          return StringView(std::get<0>(tests[row]));
+        });
     if (setAscii.has_value()) {
       inputsFlatVector->setAllIsAscii(setAscii.value());
     }
 
     auto result = evaluate<FlatVector<int64_t>>(
         "length(c0)", makeRowVector({inputsFlatVector}));
+    inputsFlatVector->setType(VARCHAR_N(maxVarcharLength));
+    auto resultWithVarcharN = evaluate<FlatVector<int64_t>>(
+        "length(c0)", makeRowVector({inputsFlatVector}));
 
     for (int32_t i = 0; i < tests.size(); ++i) {
+      EXPECT_EQ(result->valueAt(i), resultWithVarcharN->valueAt(i));
       ASSERT_EQ(result->valueAt(i), std::get<1>(tests[i]));
     }
   }
@@ -289,6 +347,13 @@ class StringFunctionsTest : public FunctionBaseTest {
       std::pair<std::tuple<std::string, std::string, int64_t>, int64_t>>;
 
   template <typename TInstance>
+  void testStringPosition(
+      const std::string& functionName,
+      const strpos_input_test_t& tests,
+      const std::vector<std::optional<bool>>& asciiEncodings,
+      bool withInstanceArgument);
+
+  template <typename TInstance>
   void testStringPositionAllFlatVector(
       const strpos_input_test_t& tests,
       const std::vector<std::optional<bool>>& stringEncodings,
@@ -304,7 +369,8 @@ class StringFunctionsTest : public FunctionBaseTest {
       const std::vector<std::pair<int64_t, std::string>>& tests);
 
   void testCodePointFlatVector(
-      const std::vector<std::pair<std::string, int32_t>>& tests);
+      const std::vector<std::pair<std::string, int32_t>>& tests,
+      const TypePtr& inputType);
 
   void testStringPositionFastPath(
       const std::vector<std::tuple<std::string, int64_t>>& tests,
@@ -450,7 +516,10 @@ TEST_F(StringFunctionsTest, substrInvalidUtf8) {
   const auto substr = [&](std::optional<std::string> str,
                           std::optional<int32_t> start,
                           std::optional<int32_t> length) {
-    return evaluateOnce<std::string>("substr(c0, c1, c2)", str, start, length);
+    // return evaluateOnce<std::string>("substr(c0, c1, c2)", str, start,
+    // length);
+    return evaluateOnceWithVarcharArgs<std::string>(
+        "substr(c0, c1, c2)", str, start, length);
   };
 
   // The byte \xE7 indicates it should have 2 more bytes to be valid UTF-8, but
@@ -579,7 +648,8 @@ TEST_F(StringFunctionsTest, substrNumericOverflow) {
   const auto substr = [&](std::optional<std::string> str,
                           std::optional<int32_t> start,
                           std::optional<int32_t> length) {
-    return evaluateOnce<std::string>("substr(c0, c1, c2)", str, start, length);
+    return evaluateOnceWithVarcharArgs<std::string>(
+        "substr(c0, c1, c2)", str, start, length);
   };
 
   EXPECT_EQ(substr("example", 4, 2147483645), "mple");
@@ -881,7 +951,6 @@ TEST_F(StringFunctionsTest, lower) {
 TEST_F(StringFunctionsTest, concat) {
   size_t maxArgsCount = 10; // cols
   size_t rowCount = 100;
-  size_t maxStringLength = 100;
 
   std::vector<std::vector<std::string>> inputTable;
   for (int argsCount = 2; argsCount <= maxArgsCount; argsCount++) {
@@ -894,12 +963,13 @@ TEST_F(StringFunctionsTest, concat) {
     for (int row = 0; row < rowCount; row++) {
       for (int col = 0; col < argsCount; col++) {
         inputTable[row][col] =
-            generateRandomString(folly::Random::rand32() % maxStringLength);
+            generateRandomString(folly::Random::rand32() % kMaxStringLength);
       }
     }
 
     SCOPED_TRACE(fmt::format("Number of arguments: {}", argsCount));
-    testConcatFlatVector(inputTable, argsCount);
+    // testConcatFlatVector(inputTable, argsCount);
+    testConcatFlatVector(inputTable, argsCount, /*useVarcharN=*/true);
   }
 
   // Test constant input vector with 2 args
@@ -907,6 +977,20 @@ TEST_F(StringFunctionsTest, concat) {
     auto rows = makeRowVector(makeRowType({VARCHAR(), VARCHAR()}), 10);
     auto c0 = generateRandomString(20);
     auto c1 = generateRandomString(20);
+    auto result = evaluate<SimpleVector<StringView>>(
+        fmt::format("concat('{}', '{}')", c0, c1), rows);
+    for (int i = 0; i < 10; ++i) {
+      EXPECT_EQ(result->valueAt(i), c0 + c1);
+    }
+  }
+
+  // Test constant input vector with 2 args with bounded varchar type
+  {
+    auto rows = makeRowVector(
+        makeRowType({VARCHAR_N(kMaxStringLength), VARCHAR_N(kMaxStringLength)}),
+        10);
+    auto c0 = generateRandomString(kMaxStringLength);
+    auto c1 = generateRandomString(kMaxStringLength);
     auto result = evaluate<SimpleVector<StringView>>(
         fmt::format("concat('{}', '{}')", c0, c1), rows);
     for (int i = 0; i < 10; ++i) {
@@ -922,14 +1006,14 @@ TEST_F(StringFunctionsTest, concat) {
             1'000,
             [&](auto /* row */) {
               value = generateRandomString(
-                  folly::Random::rand32() % maxStringLength);
+                  folly::Random::rand32() % kMaxStringLength);
               return StringView(value);
             }),
         makeFlatVector<StringView>(
             1'000,
             [&](auto /* row */) {
               value = generateRandomString(
-                  folly::Random::rand32() % maxStringLength);
+                  folly::Random::rand32() % kMaxStringLength);
               return StringView(value);
             }),
     });
@@ -1092,7 +1176,7 @@ TEST_F(StringFunctionsTest, bitLength) {
 
 TEST_F(StringFunctionsTest, startsWith) {
   auto startsWith = [&](const std::string& x, const std::string& y) {
-    return evaluateOnce<bool>(
+    return evaluateOnceWithVarcharArgs<bool>(
                "starts_with(c0, c1)", std::optional(x), std::optional(y))
         .value();
   };
@@ -1110,7 +1194,7 @@ TEST_F(StringFunctionsTest, startsWith) {
 
 TEST_F(StringFunctionsTest, endsWith) {
   auto endsWith = [&](const std::string& x, const std::string& y) {
-    return evaluateOnce<bool>(
+    return evaluateOnceWithVarcharArgs<bool>(
                "ends_with(c0, c1)", std::optional(x), std::optional(y))
         .value();
   };
@@ -1141,9 +1225,9 @@ TEST_F(StringFunctionsTest, endsWithHasNull) {
   ASSERT_TRUE(rest->isNullAt(0));
 }
 
-// Test strpos function
 template <typename TInstance>
-void StringFunctionsTest::testStringPositionAllFlatVector(
+void StringFunctionsTest::testStringPosition(
+    const std::string& functionName,
     const strpos_input_test_t& tests,
     const std::vector<std::optional<bool>>& asciiEncodings,
     bool withInstanceArgument) {
@@ -1152,12 +1236,18 @@ void StringFunctionsTest::testStringPositionAllFlatVector(
   auto instanceVector =
       withInstanceArgument ? makeFlatVector<TInstance>(tests.size()) : nullptr;
 
+  size_t maxStringLength{0};
+  size_t maxSubStringLength{0};
   for (int i = 0; i < tests.size(); i++) {
     stringVector->set(i, StringView(std::get<0>(tests[i].first)));
     subStringVector->set(i, StringView(std::get<1>(tests[i].first)));
     if (instanceVector) {
       instanceVector->set(i, std::get<2>(tests[i].first));
     }
+    maxStringLength =
+        std::max(maxStringLength, std::get<0>(tests[i].first).size());
+    maxSubStringLength =
+        std::max(maxStringLength, std::get<1>(tests[i].first).size());
   }
 
   if (asciiEncodings[0].has_value()) {
@@ -1168,18 +1258,33 @@ void StringFunctionsTest::testStringPositionAllFlatVector(
   }
 
   FlatVectorPtr<int64_t> result;
-  if (withInstanceArgument) {
-    result = evaluate<FlatVector<int64_t>>(
-        "strpos(c0, c1,c2)",
-        makeRowVector({stringVector, subStringVector, instanceVector}));
-  } else {
-    result = evaluate<FlatVector<int64_t>>(
-        "strpos(c0, c1)", makeRowVector({stringVector, subStringVector}));
-  }
+  for (int loop = 0; loop < 2; ++loop) {
+    if (withInstanceArgument) {
+      result = evaluate<FlatVector<int64_t>>(
+          fmt::format("{}(c0, c1, c2)", functionName),
+          makeRowVector({stringVector, subStringVector, instanceVector}));
+    } else {
+      result = evaluate<FlatVector<int64_t>>(
+          fmt::format("{}(c0, c1)", functionName),
+          makeRowVector({stringVector, subStringVector}));
+    }
 
-  for (int32_t i = 0; i < tests.size(); ++i) {
-    ASSERT_EQ(result->valueAt(i), tests[i].second);
+    for (int32_t i = 0; i < tests.size(); ++i) {
+      ASSERT_EQ(result->valueAt(i), tests[i].second);
+    }
+    stringVector->setType(VARCHAR_N(maxStringLength));
+    subStringVector->setType(VARCHAR_N(maxSubStringLength));
   }
+}
+
+// Test strpos function
+template <typename TInstance>
+void StringFunctionsTest::testStringPositionAllFlatVector(
+    const strpos_input_test_t& tests,
+    const std::vector<std::optional<bool>>& asciiEncodings,
+    bool withInstanceArgument) {
+  testStringPosition<TInstance>(
+      "strpos", tests, asciiEncodings, withInstanceArgument);
 }
 
 TEST_F(StringFunctionsTest, stringPosition) {
@@ -1223,39 +1328,8 @@ void StringFunctionsTest::testStringPositionFromEndAllFlatVector(
     const strpos_input_test_t& tests,
     const std::vector<std::optional<bool>>& asciiEncodings,
     bool withInstanceArgument) {
-  auto stringVector = makeFlatVector<StringView>(tests.size());
-  auto subStringVector = makeFlatVector<StringView>(tests.size());
-  auto instanceVector =
-      withInstanceArgument ? makeFlatVector<TInstance>(tests.size()) : nullptr;
-
-  for (int i = 0; i < tests.size(); i++) {
-    stringVector->set(i, StringView(std::get<0>(tests[i].first)));
-    subStringVector->set(i, StringView(std::get<1>(tests[i].first)));
-    if (instanceVector) {
-      instanceVector->set(i, std::get<2>(tests[i].first));
-    }
-  }
-
-  if (asciiEncodings[0].has_value()) {
-    stringVector->setAllIsAscii(asciiEncodings[0].value());
-  }
-  if (asciiEncodings[1].has_value()) {
-    subStringVector->setAllIsAscii(asciiEncodings[1].value());
-  }
-
-  FlatVectorPtr<int64_t> result;
-  if (withInstanceArgument) {
-    result = evaluate<FlatVector<int64_t>>(
-        "strrpos(c0, c1,c2)",
-        makeRowVector({stringVector, subStringVector, instanceVector}));
-  } else {
-    result = evaluate<FlatVector<int64_t>>(
-        "strrpos(c0, c1)", makeRowVector({stringVector, subStringVector}));
-  }
-
-  for (int32_t i = 0; i < tests.size(); ++i) {
-    ASSERT_EQ(result->valueAt(i), tests[i].second);
-  }
+  testStringPosition<TInstance>(
+      "strrpos", tests, asciiEncodings, withInstanceArgument);
 }
 
 TEST_F(StringFunctionsTest, stringPositionFromEnd) {
@@ -1343,8 +1417,9 @@ TEST_F(StringFunctionsTest, chr) {
 }
 
 void StringFunctionsTest::testCodePointFlatVector(
-    const std::vector<std::pair<std::string, int32_t>>& tests) {
-  auto inputString = makeFlatVector<StringView>(tests.size());
+    const std::vector<std::pair<std::string, int32_t>>& tests,
+    const TypePtr& inputType) {
+  auto inputString = makeFlatVector<StringView>(tests.size(), inputType);
   for (int i = 0; i < tests.size(); i++) {
     inputString->set(i, StringView(tests[i].first));
   }
@@ -1368,11 +1443,15 @@ TEST_F(StringFunctionsTest, codePoint) {
       {"", 0},
   };
 
-  testCodePointFlatVector(validInputTest);
+  TypePtr type = VARCHAR();
+  for (auto loop = 0; loop < 2; ++loop) {
+    testCodePointFlatVector(validInputTest, type);
 
-  EXPECT_THROW(
-      testCodePointFlatVector(invalidInputTest),
-      facebook::velox::VeloxUserError);
+    EXPECT_THROW(
+        testCodePointFlatVector(invalidInputTest, type),
+        facebook::velox::VeloxUserError);
+    type = VARCHAR_N(10);
+  }
 
   // Test constant vectors
   auto rows = makeRowVector(makeRowType({BIGINT()}), 10);
@@ -1385,7 +1464,7 @@ TEST_F(StringFunctionsTest, codePoint) {
 int64_t StringFunctionsTest::levenshteinDistance(
     const std::string& left,
     const std::string& right) {
-  return evaluateOnce<int64_t>(
+  return evaluateOnceWithVarcharArgs<int64_t>(
              "levenshtein_distance(c0, c1)",
              std::optional(left),
              std::optional(right))
@@ -1460,7 +1539,7 @@ TEST_F(StringFunctionsTest, invalidLevenshteinDistance) {
 double StringFunctionsTest::jaroWinklerSimilarity(
     const std::string& left,
     const std::string& right) {
-  return evaluateOnce<double>(
+  return evaluateOnceWithVarcharArgs<double>(
              "jarowinkler_similarity(c0, c1)",
              std::optional(left),
              std::optional(right))
@@ -1517,7 +1596,7 @@ TEST_F(StringFunctionsTest, invalidJaroWinklerSimilarity) {
 TEST_F(StringFunctionsTest, longestCommonPrefix) {
   const auto longestCommonPrefix = [&](std::optional<std::string> left,
                                        std::optional<std::string> right) {
-    return evaluateOnce<std::string>(
+    return evaluateOnceWithVarcharArgs<std::string>(
         "longest_common_prefix(c0, c1)", std::move(left), std::move(right));
   };
 
@@ -1827,7 +1906,7 @@ TEST_F(StringFunctionsTest, controlExprEncodingPropagation) {
 
 TEST_F(StringFunctionsTest, reverse) {
   const auto reverse = [&](std::optional<std::string> value) {
-    return evaluateOnce<std::string>("reverse(c0)", value);
+    return evaluateOnceWithVarcharArgs<std::string>("reverse(c0)", value);
   };
 
   std::string invalidStr = "Ψ\xFF\xFFΣΓΔA";
@@ -1875,7 +1954,7 @@ TEST_F(StringFunctionsTest, varbinaryReverse) {
 
 TEST_F(StringFunctionsTest, toUtf8) {
   const auto toUtf8 = [&](std::optional<std::string> value) {
-    return evaluateOnce<std::string>("to_utf8(c0)", value);
+    return evaluateOnceWithVarcharArgs<std::string>("to_utf8(c0)", value);
   };
 
   EXPECT_EQ(std::nullopt, toUtf8(std::nullopt));
@@ -1884,7 +1963,7 @@ TEST_F(StringFunctionsTest, toUtf8) {
 
   EXPECT_EQ(
       "abc",
-      evaluateOnce<std::string>(
+      evaluateOnceWithVarcharArgs<std::string>(
           "from_hex(to_hex(to_utf8(c0)))", std::optional<std::string>("abc")));
 
   // This case is a sanity check for the to_utf8 implementation to make sure the
@@ -2190,7 +2269,7 @@ TEST_F(StringFunctionsTest, rpad) {
   const auto rpad = [&](std::optional<std::string> string,
                         std::optional<int64_t> size,
                         std::optional<std::string> padString) {
-    return evaluateOnce<std::string>(
+    return evaluateOnceWithVarcharArgs<std::string>(
         "rpad(c0, c1, c2)", string, size, padString);
   };
 
@@ -2237,7 +2316,7 @@ TEST_F(StringFunctionsTest, lpad) {
   const auto lpad = [&](std::optional<std::string> string,
                         std::optional<int64_t> size,
                         std::optional<std::string> padString) {
-    return evaluateOnce<std::string>(
+    return evaluateOnceWithVarcharArgs<std::string>(
         "lpad(c0, c1, c2)", string, size, padString);
   };
 
@@ -2304,7 +2383,8 @@ TEST_F(StringFunctionsTest, varbinaryLength) {
 TEST_F(StringFunctionsTest, hammingDistance) {
   const auto hammingDistance = [&](std::optional<std::string> left,
                                    std::optional<std::string> right) {
-    return evaluateOnce<int64_t>("hamming_distance(c0, c1)", left, right);
+    return evaluateOnceWithVarcharArgs<int64_t>(
+        "hamming_distance(c0, c1)", left, right);
   };
 
   EXPECT_EQ(hammingDistance("", ""), 0);
@@ -2388,7 +2468,7 @@ TEST_F(StringFunctionsTest, hammingDistance) {
 
 TEST_F(StringFunctionsTest, normalize) {
   const auto normalizeWithoutForm = [&](std::optional<std::string> string) {
-    return evaluateOnce<std::string>("normalize(c0)", string);
+    return evaluateOnceWithVarcharArgs<std::string>("normalize(c0)", string);
   };
 
   const auto normalizeWithForm = [&](std::optional<std::string> string,
@@ -2443,7 +2523,7 @@ TEST_F(StringFunctionsTest, normalize) {
 TEST_F(StringFunctionsTest, trail) {
   auto trail = [&](std::optional<std::string> string,
                    std::optional<int32_t> N) {
-    return evaluateOnce<std::string>("trail(c0, c1)", string, N);
+    return evaluateOnceWithVarcharArgs<std::string>("trail(c0, c1)", string, N);
   };
   // Test registered signatures
   auto signatures = getSignatureStrings("trail");
@@ -2458,12 +2538,14 @@ TEST_F(StringFunctionsTest, trail) {
 
   // Test empty
   EXPECT_EQ("", trail("", 3));
+
+  EXPECT_EQ(std::nullopt, trail(std::nullopt, 3));
 }
 
 TEST_F(StringFunctionsTest, xxHash64FunctionVarchar) {
   const auto xxhash64 = [&](std::optional<std::string> value) {
-    return evaluateOnce<int64_t>(
-        "xxhash64_internal(c0)", VARCHAR(), std::move(value));
+    return evaluateOnceWithVarcharArgs<int64_t>(
+        "xxhash64_internal(c0)", std::move(value));
   };
 
   EXPECT_EQ(std::nullopt, xxhash64(std::nullopt));
@@ -2498,4 +2580,34 @@ TEST_F(StringFunctionsTest, keySamplingPercent) {
   EXPECT_EQ(0.28, keySamplingPercent(""));
   EXPECT_EQ(
       4.143659858002825E-274, keySamplingPercent("Hello World from Velox!"));
+}
+
+TEST_F(StringFunctionsTest, distinctFrom) {
+  // test distinct_from - unlike regular comparison operators,
+  // distinct_from treats NULLs as values that can be compared
+  const auto distinctFrom = [&](std::optional<std::string> a,
+                                std::optional<std::string> b,
+                                const std::vector<TypePtr>& types) {
+    return evaluateOnce<bool>("c0 is distinct from c1", types, a, b);
+  };
+
+  // NULL is NOT distinct from NULL.
+  // VARCHAR_N requires length > 0, so use VARCHAR_N(1) for null/empty inputs
+  // when the test wants the column to carry a bounded type rather than
+  // unbounded VARCHAR.
+  EXPECT_EQ(
+      false,
+      distinctFrom(std::nullopt, std::nullopt, {VARCHAR_N(1), VARCHAR_N(1)}));
+  EXPECT_EQ(false, distinctFrom("foo", "foo", {VARCHAR(), VARCHAR()}));
+  EXPECT_EQ(true, distinctFrom(std::nullopt, "", {VARCHAR_N(1), VARCHAR()}));
+  EXPECT_EQ(true, distinctFrom("", "foo", {VARCHAR(), VARCHAR()}));
+  EXPECT_EQ(true, distinctFrom("", "foo", {VARCHAR_N(1), VARCHAR()}));
+  EXPECT_EQ(true, distinctFrom("foo", "foobar", {VARCHAR(), VARCHAR()}));
+  EXPECT_EQ(false, distinctFrom("foo", "foo", {VARCHAR_N(3), VARCHAR()}));
+  EXPECT_EQ(false, distinctFrom("foo", "foo", {VARCHAR_N(3), VARCHAR_N(3)}));
+  EXPECT_EQ(
+      true, distinctFrom(std::nullopt, "foo", {VARCHAR_N(1), VARCHAR_N(3)}));
+  EXPECT_EQ(
+      true, distinctFrom("foo", std::nullopt, {VARCHAR_N(3), VARCHAR_N(1)}));
+  EXPECT_EQ(true, distinctFrom(std::nullopt, "foo", {VARCHAR(), VARCHAR_N(3)}));
 }

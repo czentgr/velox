@@ -81,8 +81,8 @@ std::optional<int32_t> CastRulesRegistry::castCostImpl(
     return 0;
   }
 
-  const auto fromName = fromType->name();
-  const auto toName = toType->name();
+  const std::string fromName{fromType->name()};
+  const std::string toName{toType->name()};
 
   // Try direct rule lookup first. This handles primitives and custom types
   // including those with children like IPPREFIX (which extends RowType).
@@ -95,6 +95,24 @@ std::optional<int32_t> CastRulesRegistry::castCostImpl(
       return std::nullopt;
     }
     return requireImplicit ? rule->cost : 0;
+  }
+
+  // Bounded character / binary types share a physical layout with their
+  // unbounded counterparts. If a direct rule from the bounded fromType to
+  // toType is missing, fall back to the unbounded equivalent so any cast
+  // available from VARCHAR / VARBINARY is also available from VARCHAR(N) /
+  // VARBINARY(N) without requiring per-target rule duplication. The bounded
+  // -> unbounded widening is free.
+  if (fromName == "VARCHARN" || fromName == "VARBINARYN" ||
+      fromName == "CHARN") {
+    auto unboundedRule = findRule(
+        (fromName == "VARBINARYN") ? "VARBINARY" : "VARCHAR", toName);
+    if (unboundedRule) {
+      if (requireImplicit && !unboundedRule->implicitAllowed) {
+        return std::nullopt;
+      }
+      return requireImplicit ? unboundedRule->cost : 0;
+    }
   }
 
   // No explicit rule. For container types (ARRAY, MAP, ROW) with the same

@@ -37,6 +37,33 @@ TypePtr typeFromString(
   return inferredType;
 }
 
+TypePtr variableTypeFromString(
+    const std::string& type,
+    uint32_t length,
+    bool failIfNotRegistered = true) {
+  auto upper = type;
+  std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+
+  // Route VARCHAR(N) / VARBINARY(N) / CHAR(N) surface syntax to their
+  // bounded custom-type registrations (VARCHARN / VARBINARYN / CHARN).
+  std::string customName = upper;
+  if (upper == "VARCHAR") {
+    customName = "VARCHARN";
+  } else if (upper == "VARBINARY") {
+    customName = "VARBINARYN";
+  } else if (upper == "CHAR") {
+    customName = "CHARN";
+  }
+
+  TypeParameter parameter{length};
+  auto inferredType = getType(customName, {parameter});
+  if (failIfNotRegistered) {
+    VELOX_CHECK(
+        inferredType, "Failed to parse type [{}]. Type not registered.", type);
+  }
+  return inferredType;
+}
+
 TypePtr customTypeWithChildren(
     const std::string& name,
     const std::vector<TypePtr>& children) {

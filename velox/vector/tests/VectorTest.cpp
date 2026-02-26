@@ -262,6 +262,7 @@ class VectorTest : public testing::Test, public velox::test::VectorTestBase {
     EXPECT_EQ(flat->size(), size);
     EXPECT_GE(flat->values()->size(), BaseVector::byteSize<T>(size));
     EXPECT_EQ(flat->nulls(), nullptr);
+    EXPECT_EQ(flat->type(), type);
 
     flat->resize(size * 2);
     EXPECT_EQ(flat->size(), size * 2);
@@ -972,6 +973,7 @@ class VectorTest : public testing::Test, public velox::test::VectorTestBase {
 
   size_t vectorSize_{100};
   size_t numIterations_{3};
+  const size_t kMaxStringViewBufferSize_{1000};
 };
 
 template <>
@@ -981,8 +983,8 @@ int128_t VectorTest::testValue<int128_t>(int32_t i, BufferPtr& /*space*/) {
 
 template <>
 StringView VectorTest::testValue(int32_t n, BufferPtr& buffer) {
-  if (!buffer || buffer->capacity() < 1000) {
-    buffer = AlignedBuffer::allocate<char>(1000, pool());
+  if (!buffer || buffer->capacity() < kMaxStringViewBufferSize_) {
+    buffer = AlignedBuffer::allocate<char>(kMaxStringViewBufferSize_, pool());
   }
   std::stringstream out;
   out << n;

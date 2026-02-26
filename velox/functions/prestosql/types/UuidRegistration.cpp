@@ -22,6 +22,7 @@
 
 #include "velox/expression/CastExpr.h"
 #include "velox/functions/prestosql/types/UuidType.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/type/CastRegistry.h"
 
 namespace facebook::velox {
@@ -159,6 +160,30 @@ void registerUuidType() {
       {.fromType = "VARBINARY", .toType = "UUID"},
       {.fromType = "UUID", .toType = "VARCHAR"},
       {.fromType = "UUID", .toType = "VARBINARY"},
+      {.fromType = "VARCHARN",
+       .toType = "UUID",
+       .validator =
+           [](const TypePtr& from, const TypePtr& to) {
+             return (isVarcharNType(*from) && getVarcharNLength(*from) < 36);
+           }},
+      {.fromType = "VARBINARYN",
+       .toType = "UUID",
+       .validator =
+           [](const TypePtr& from, const TypePtr& to) {
+             return from->kind() == TypeKind::VARBINARY;
+           }},
+      {.fromType = "UUID",
+       .toType = "VARCHARN",
+       .validator =
+           [](const TypePtr& from, const TypePtr& to) {
+             return from->kind() == TypeKind::VARCHAR;
+           }},
+      {.fromType = "UUID",
+       .toType = "VARBINARYN",
+       .validator =
+           [](const TypePtr& from, const TypePtr& to) {
+             return from->kind() == TypeKind::VARBINARY;
+           }},
   });
 }
 } // namespace facebook::velox

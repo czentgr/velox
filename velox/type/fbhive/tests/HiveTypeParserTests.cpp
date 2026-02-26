@@ -21,12 +21,27 @@
 #include "gtest/gtest-test-part.h"
 #include "gtest/gtest.h"
 #include "velox/common/base/tests/GTestUtils.h"
+#include "velox/functions/prestosql/types/CharNRegistration.h"
+#include "velox/functions/prestosql/types/VarbinaryNRegistration.h"
+#include "velox/functions/prestosql/types/VarcharNRegistration.h"
 #include "velox/type/OpaqueCustomTypes.h"
 #include "velox/type/fbhive/HiveTypeParser.h"
 
 using facebook::velox::TypeKind;
 
 namespace facebook::velox::type::fbhive {
+
+class HiveTypeParserTestEnvironment : public ::testing::Environment {
+ public:
+  void SetUp() override {
+    registerVarcharNType();
+    registerVarbinaryNType();
+    registerCharNType();
+  }
+};
+
+testing::Environment* const kHiveTypeParserEnv =
+    testing::AddGlobalTestEnvironment(new HiveTypeParserTestEnvironment);
 
 template <TypeKind KIND>
 void validate(const char* str) {
@@ -47,6 +62,10 @@ TEST(FbHive, typeParserPrimitive) {
   validate<TypeKind::VARCHAR>("string");
   validate<TypeKind::VARCHAR>("varchar");
   validate<TypeKind::VARCHAR>("varchar(16)");
+  validate<TypeKind::VARBINARY>("binary");
+  validate<TypeKind::VARBINARY>("varbinary");
+  validate<TypeKind::VARBINARY>("varbinary(16)");
+  validate<TypeKind::VARCHAR>("char(10)");
   validate<TypeKind::INTEGER>("   int  ");
 }
 

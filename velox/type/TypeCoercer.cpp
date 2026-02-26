@@ -60,6 +60,8 @@ std::vector<CoercionEntry> defaultRules() {
        DOUBLE(),
        VARCHAR(),
        VARBINARY()});
+  // add(VARCHAR(),
+  //     {VARCHAR()}); // Allow coercion between different VARCHAR lengths.
 
   return rules;
 }
@@ -255,6 +257,30 @@ std::optional<int32_t> TypeCoercer::coercible(
 
 namespace {
 
+bool isDecimalTypeOnlyCoercion(const TypePtr& fromType, const TypePtr& toType) {
+  if (!((fromType->isShortDecimal() || fromType->isLongDecimal()) &&
+        (toType->isShortDecimal() || toType->isLongDecimal()))) {
+    return false;
+  }
+
+  const auto [fromPrecision, fromScale] = getDecimalPrecisionScale(*fromType);
+  const auto [toPrecision, toScale] = getDecimalPrecisionScale(*toType);
+
+  // Type-only coercion for decimals requires:
+  // 1. Same decimal subtype (both short or both long)
+  // 2. Same scale
+  // 3. Source precision <= result precision
+  const bool sameDecimalSubtype =
+      (fromType->isShortDecimal() && toType->isShortDecimal()) ||
+      (fromType->isLongDecimal() && toType->isLongDecimal());
+  const bool sameScale = fromScale == toScale;
+  const bool sourcePrecisionIsLessOrEqualToResultPrecision =
+      fromPrecision <= toPrecision;
+
+  return sameDecimalSubtype && sameScale &&
+      sourcePrecisionIsLessOrEqualToResultPrecision;
+}
+
 TypePtr leastCommonSuperRowType(
     const TypeCoercer& coercer,
     const RowType& a,
@@ -297,6 +323,51 @@ TypePtr TypeCoercer::leastCommonSuperType(const TypePtr& a, const TypePtr& b)
 
   if (b->isUnknown()) {
     return a;
+  }
+
+  // Handle bounded character/binary types. CHARN and VARCHARN both extend
+  // VarcharType (kind() == VARCHAR); VARBINARYN extends VarbinaryType
+  // (kind() == VARBINARY). Branch on kind first, then disambiguate by name
+  // (bounded types live under velox/functions/prestosql/types and cannot be
+  // depended on from velox/type).
+  // Cases (per kind):
+  //   CHARN     + CHARN     -> CHARN(max)
+  //   VARCHARN  + VARCHARN  -> VARCHARN(max)
+  //   CHARN     + VARCHARN  -> VARCHARN(max)   (CHARN widens to VARCHARN)
+  //   bounded   + unbounded -> unbounded
+  if (a->kind() == TypeKind::VARCHAR && b->kind() == TypeKind::VARCHAR) {
+    const std::string aName = a->name();
+    const std::string bName = b->name();
+    const bool aBounded = (aName == "CHARN" || aName == "VARCHARN");
+    const bool bBounded = (bName == "CHARN" || bName == "VARCHARN");
+    if (aBounded && bBounded) {
+      const auto aLength = a->parameters()[0].longLiteral.value();
+      const auto bLength = b->parameters()[0].longLiteral.value();
+      const auto length = std::max(aLength, bLength);
+      // If both sides are CHARN, the supertype is CHARN; otherwise VARCHARN.
+      const auto* targetName =
+          (aName == "CHARN" && bName == "CHARN") ? "CHARN" : "VARCHARN";
+      return getType(targetName, {TypeParameter(length)});
+    }
+    // bounded + plain unbounded VARCHAR (or vice versa).
+    if (aBounded || bBounded) {
+      return VARCHAR();
+    }
+  }
+  if (a->kind() == TypeKind::VARBINARY && b->kind() == TypeKind::VARBINARY) {
+    const std::string aName = a->name();
+    const std::string bName = b->name();
+    const bool aBounded = (aName == "VARBINARYN");
+    const bool bBounded = (bName == "VARBINARYN");
+    if (aBounded && bBounded) {
+      const auto aLength = a->parameters()[0].longLiteral.value();
+      const auto bLength = b->parameters()[0].longLiteral.value();
+      return getType(
+          "VARBINARYN", {TypeParameter(std::max(aLength, bLength))});
+    }
+    if (aBounded || bBounded) {
+      return VARBINARY();
+    }
   }
 
   if (a->size() != b->size()) {

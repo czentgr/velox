@@ -64,6 +64,13 @@ using S2 = IntegerVariable<6>;
 using S3 = IntegerVariable<7>;
 using S4 = IntegerVariable<8>;
 
+// Length variables for bounded character types: VARCHAR(L), CHAR(L),
+// VARBINARY(L). Index 9 is intentionally skipped.
+using L1 = IntegerVariable<10>;
+using L2 = IntegerVariable<11>;
+using L3 = IntegerVariable<12>;
+using L4 = IntegerVariable<13>;
+
 template <size_t id>
 struct EnumVariable {
   static size_t getId() {
@@ -88,6 +95,27 @@ template <typename P, typename S>
 struct LongDecimal {
  private:
   LongDecimal() {}
+};
+
+// Template wrappers for bounded character types. Physical layout is StringView
+// (same as Varchar / Varbinary); the length parameter is enforced at cast
+// time and propagated through parameterized signatures.
+template <typename L>
+struct VarcharN {
+ private:
+  VarcharN() {}
+};
+
+template <typename L>
+struct CharN {
+ private:
+  CharN() {}
+};
+
+template <typename L>
+struct VarbinaryN {
+ private:
+  VarbinaryN() {}
 };
 
 struct AnyType {};
@@ -367,6 +395,16 @@ struct SimpleTypeTrait<Varchar> : public TypeTraits<TypeKind::VARCHAR> {};
 
 template <>
 struct SimpleTypeTrait<Varbinary> : public TypeTraits<TypeKind::VARBINARY> {};
+
+template <typename L>
+struct SimpleTypeTrait<VarcharN<L>> : public TypeTraits<TypeKind::VARCHAR> {};
+
+template <typename L>
+struct SimpleTypeTrait<CharN<L>> : public TypeTraits<TypeKind::VARCHAR> {};
+
+template <typename L>
+struct SimpleTypeTrait<VarbinaryN<L>>
+    : public TypeTraits<TypeKind::VARBINARY> {};
 
 template <>
 struct SimpleTypeTrait<Date> : public TypeTraits<TypeKind::INTEGER> {

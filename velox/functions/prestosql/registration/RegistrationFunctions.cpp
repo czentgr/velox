@@ -16,7 +16,10 @@
 #include <string>
 #include "velox/functions/prestosql/IPAddressFunctions.h"
 #include "velox/functions/prestosql/UuidFunctions.h"
+#include "velox/functions/prestosql/types/CharNRegistration.h"
 #include "velox/functions/prestosql/types/P4HyperLogLogRegistration.h"
+#include "velox/functions/prestosql/types/VarbinaryNRegistration.h"
+#include "velox/functions/prestosql/types/VarcharNRegistration.h"
 
 namespace facebook::velox::functions {
 
@@ -156,6 +159,9 @@ void registerBitwiseFunctions(const std::string& prefix) {
 
 void registerAllScalarFunctions(const std::string& prefix) {
   registerP4HyperLogLogType();
+  registerVarcharNType();
+  registerVarbinaryNType();
+  registerCharNType();
   registerArithmeticFunctions(prefix);
   registerCheckedArithmeticFunctions(prefix);
   registerComparisonFunctions(prefix);

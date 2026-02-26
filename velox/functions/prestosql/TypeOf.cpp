@@ -23,6 +23,7 @@
 #include "velox/functions/prestosql/types/SetDigestType.h"
 #include "velox/functions/prestosql/types/TDigestType.h"
 #include "velox/functions/prestosql/types/VarcharEnumType.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 
 namespace facebook::velox::functions {
 namespace {
@@ -110,6 +111,11 @@ std::string typeName(const TypePtr& type) {
 
   if (type->kind() == TypeKind::UNKNOWN) {
     return "unknown";
+  }
+
+  if (isVarcharNType(*type)) {
+    auto length = getVarcharNLength(*type);
+    return fmt::format("varchar({})", length);
   }
 
   // Handle unsupported types

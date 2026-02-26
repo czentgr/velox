@@ -66,6 +66,7 @@ HiveTypeParser::HiveTypeParser() {
   setupMetadata<TokenType::String, TypeKind::VARCHAR>({"string", "varchar"});
   setupMetadata<TokenType::Binary, TypeKind::VARBINARY>(
       {"binary", "varbinary"});
+  setupMetadata<TokenType::Char, TypeKind::VARCHAR>("char");
   setupMetadata<TokenType::Timestamp, TypeKind::TIMESTAMP>("timestamp");
   setupMetadata<TokenType::Opaque, TypeKind::OPAQUE>("opaque");
   setupMetadata<TokenType::List, TypeKind::ARRAY>("array");
@@ -121,6 +122,43 @@ Result HiveTypeParser::parseType() {
       eatToken(TokenType::RightRoundBracket);
       return Result{DECIMAL(
           std::atoi(precision.value.data()), std::atoi(scale.value.data()))};
+    } else if (
+        nt.metadata->tokenType == TokenType::String &&
+        lookAhead() == TokenType::LeftRoundBracket) {
+      eatToken(TokenType::LeftRoundBracket);
+      Token length = nextToken();
+      VELOX_CHECK(
+          isPositiveInteger(length.value),
+          "Varchar length must be a positive integer");
+      eatToken(TokenType::RightRoundBracket);
+      return Result{getType(
+          "VARCHARN",
+          {TypeParameter(static_cast<int64_t>(
+              std::atoi(length.value.data())))})};
+    } else if (
+        nt.metadata->tokenType == TokenType::Binary &&
+        lookAhead() == TokenType::LeftRoundBracket) {
+      eatToken(TokenType::LeftRoundBracket);
+      Token length = nextToken();
+      VELOX_CHECK(
+          isPositiveInteger(length.value),
+          "Varbinary length must be a positive integer");
+      eatToken(TokenType::RightRoundBracket);
+      return Result{getType(
+          "VARBINARYN",
+          {TypeParameter(static_cast<int64_t>(
+              std::atoi(length.value.data())))})};
+    } else if (nt.metadata->tokenType == TokenType::Char) {
+      eatToken(TokenType::LeftRoundBracket);
+      Token length = nextToken();
+      VELOX_CHECK(
+          isPositiveInteger(length.value),
+          "Char length must be a positive integer");
+      eatToken(TokenType::RightRoundBracket);
+      return Result{getType(
+          "CHARN",
+          {TypeParameter(static_cast<int64_t>(
+              std::atoi(length.value.data())))})};
     } else if (nt.metadata->tokenString[0] == "date") {
       return Result{DATE()};
     } else if (nt.metadata->tokenString[0] == "time") {
@@ -131,15 +169,6 @@ Result HiveTypeParser::parseType() {
     auto scalarType = createScalarType(nt.typeKind());
     VELOX_CHECK_NOT_NULL(
         scalarType, "Returned a null scalar type for ", nt.typeKind());
-    if (nt.metadata->tokenType == TokenType::String &&
-        lookAhead() == TokenType::LeftRoundBracket) {
-      eatToken(TokenType::LeftRoundBracket);
-      Token length = nextToken();
-      VELOX_CHECK(
-          isPositiveInteger(length.value),
-          "Varchar length must be a positive integer");
-      eatToken(TokenType::RightRoundBracket);
-    }
     return Result{scalarType};
   } else if (nt.isOpaqueType()) {
     eatToken(TokenType::StartSubType);

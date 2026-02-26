@@ -38,7 +38,7 @@ WORD              ([[:alpha:][:alnum:]_]*)
 QUOTED_ID         (['"']([^"\n]|"")*['"'])
 NUMBER            ([[:digit:]]+)
 SIGNED_INT        (-?[[:digit:]]+)
-VARIABLE          (VARCHAR|VARBINARY)
+VARIABLE          (VARCHAR|VARBINARY|CHAR)
 WORD_WITH_SPECIAL_CHAR ([^:({ ,]+)(\.([^:({ ,]+))(\.([^:({ ,]+))
 
 %%
