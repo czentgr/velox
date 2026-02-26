@@ -57,6 +57,7 @@ enum class TokenType {
   // vs Time).
   TimeMicroUtc,
   Time,
+  Char,
   LeftRoundBracket,
   RightRoundBracket,
   MaxTokenType

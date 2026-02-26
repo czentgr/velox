@@ -24,6 +24,7 @@ target_link_libraries(
   velox_type_fbhive_test
   velox_type_fbhive
   velox_type
+  velox_presto_types
   GTest::gtest
   GTest::gtest_main
   GTest::gmock

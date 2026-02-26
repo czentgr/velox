@@ -95,7 +95,6 @@ TypePtr resolveScalarFunctionType(
   if (returnType) {
     return returnType;
   }
-
   if (nullOnFailure) {
     return nullptr;
   }
@@ -161,6 +160,22 @@ std::vector<TypePtr> implicitCastTargets(const TypePtr& type) {
       [[fallthrough]];
     case TypeKind::DOUBLE:
       break;
+    case TypeKind::VARCHAR: {
+      // Bounded VARCHAR(N) and CHAR(N) widen to unbounded VARCHAR.
+      const std::string_view name{type->name()};
+      if (name == "VARCHARN" || name == "CHARN") {
+        targetTypes.emplace_back(VARCHAR());
+      }
+      break;
+    }
+    case TypeKind::VARBINARY: {
+      // Bounded VARBINARY(N) widens to unbounded VARBINARY.
+      const std::string_view name{type->name()};
+      if (name == "VARBINARYN") {
+        targetTypes.emplace_back(VARBINARY());
+      }
+      break;
+    }
     case TypeKind::ARRAY: {
       auto childTargetTypes = implicitCastTargets(type->childAt(0));
       for (const auto& childTarget : childTargetTypes) {

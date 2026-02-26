@@ -20,8 +20,12 @@
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/functions/prestosql/types/BigintEnumRegistration.h"
 #include "velox/functions/prestosql/types/BigintEnumType.h"
+#include "velox/functions/prestosql/types/CharNRegistration.h"
+#include "velox/functions/prestosql/types/CharNType.h"
 #include "velox/functions/prestosql/types/VarcharEnumRegistration.h"
 #include "velox/functions/prestosql/types/VarcharEnumType.h"
+#include "velox/functions/prestosql/types/VarcharNRegistration.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/functions/prestosql/types/parser/TypeParser.h"
 
 namespace facebook::velox::functions::prestosql {
@@ -85,6 +89,10 @@ class TypeParserTest : public ::testing::Test {
     registerCustomType(
         "time with time zone",
         std::make_unique<const TypeFactory>(TIME_WITH_TIME_ZONE()));
+    // Register parameterized character custom types so the parser can route
+    // varchar(N) / char(N) to VARCHARN / CHARN.
+    registerVarcharNType();
+    registerCharNType();
   }
 };
 
@@ -99,12 +107,15 @@ TEST_F(TypeParserTest, integerType) {
 
 TEST_F(TypeParserTest, varcharType) {
   ASSERT_EQ(*parseType("varchar"), *VARCHAR());
-  ASSERT_EQ(*parseType("varchar(4)"), *VARCHAR());
+  ASSERT_EQ(*parseType("varchar(4)"), *VARCHAR_N(4));
+  ASSERT_EQ(*parseType("varchar(2147483647)"), *VARCHAR_N(2147483647));
 }
 
 TEST_F(TypeParserTest, charType) {
+  // Bare 'char' has no unbounded counterpart; CHAR(N) requires a length.
   VELOX_ASSERT_UNSUPPORTED_THROW(parseType("char"), "");
-  VELOX_ASSERT_UNSUPPORTED_THROW(parseType("char(4)"), "");
+  ASSERT_EQ(*parseType("char(4)"), *CHAR_N(4));
+  ASSERT_EQ(*parseType("char(2147483647)"), *CHAR_N(2147483647));
 }
 
 TEST_F(TypeParserTest, varbinary) {
@@ -236,7 +247,7 @@ TEST_F(TypeParserTest, rowType) {
 
   ASSERT_EQ(
       *parseType("row(a varchar(10),b row(a bigint))"),
-      *ROW({"a", "b"}, {VARCHAR(), ROW({"a"}, {BIGINT()})}));
+      *ROW({"a", "b"}, {VARCHAR_N(10), ROW({"a"}, {BIGINT()})}));
 
   ASSERT_EQ(
       *parseType("array(row(col0 bigint,col1 double))"),
@@ -254,7 +265,7 @@ TEST_F(TypeParserTest, rowType) {
 
   ASSERT_EQ(
       *parseType("row(varchar(10),b row(bigint))"),
-      *ROW({"", "b"}, {VARCHAR(), ROW({BIGINT()})}));
+      *ROW({"", "b"}, {VARCHAR_N(10), ROW({BIGINT()})}));
 
   ASSERT_EQ(
       *parseType("array(row(col0 bigint,double))"),

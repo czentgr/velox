@@ -779,4 +779,14 @@ template <typename T, bool providesCustomComparison>
 struct VectorWriter<CustomType<T, providesCustomComparison>>
     : public VectorWriter<typename T::type> {};
 
+// Bounded character types share Varchar's StringView-backed writer.
+template <typename L>
+struct VectorWriter<VarcharN<L>> : public VectorWriter<Varchar> {};
+
+template <typename L>
+struct VectorWriter<CharN<L>> : public VectorWriter<Varchar> {};
+
+template <typename L>
+struct VectorWriter<VarbinaryN<L>> : public VectorWriter<Varbinary> {};
+
 } // namespace facebook::velox::exec

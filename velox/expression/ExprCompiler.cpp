@@ -15,6 +15,7 @@
  */
 
 #include "velox/expression/ExprCompiler.h"
+#include "velox/expression/CastExpr.h"
 #include "velox/expression/ConstantExpr.h"
 #include "velox/expression/ExprConstants.h"
 #include "velox/expression/ExprOptimizer.h"
@@ -23,6 +24,7 @@
 #include "velox/expression/FieldReference.h"
 #include "velox/expression/LambdaExpr.h"
 #include "velox/expression/NullIfExpr.h"
+#include "velox/expression/PrestoCastHooks.h"
 #include "velox/expression/RowConstructor.h"
 #include "velox/expression/SimpleFunctionRegistry.h"
 #include "velox/expression/SpecialFormRegistry.h"
@@ -272,6 +274,92 @@ std::vector<VectorPtr> getConstantInputs(const std::vector<ExprPtr>& exprs) {
   return constants;
 }
 
+
+// If 'type' is a bounded character/binary type (VARCHAR(N), CHAR(N),
+// VARBINARY(N)), returns the unbounded equivalent. Otherwise returns nullptr.
+TypePtr widenedBoundedType(const TypePtr& type) {
+  const std::string_view name{type->name()};
+  if (name == "VARCHARN" || name == "CHARN") {
+    return VARCHAR();
+  }
+  if (name == "VARBINARYN") {
+    return VARBINARY();
+  }
+  return nullptr;
+}
+
+// If any input is a bounded VARCHAR(N)/CHAR(N)/VARBINARYN(N), returns a copy
+// of 'inputs' with each such input wrapped in a CastExpr to its unbounded
+// equivalent. Returns std::nullopt if no widening is needed. The cast to
+// unbounded VARCHAR/VARBINARY is zero-copy at runtime; the wrapper exists
+// only so the call's input types match registered unparameterized
+// signatures.
+std::optional<std::vector<ExprPtr>> widenBoundedInputs(
+    const std::vector<ExprPtr>& inputs,
+    bool trackCpuUsage,
+    const core::QueryConfig& config) {
+  std::vector<ExprPtr> widened;
+  bool changed = false;
+  widened.reserve(inputs.size());
+  for (const auto& input : inputs) {
+    if (auto target = widenedBoundedType(input->type())) {
+      widened.push_back(std::make_shared<CastExpr>(
+          target,
+          ExprPtr(input),
+          trackCpuUsage,
+          /*isTryCast=*/false,
+          std::make_shared<PrestoCastHooks>(config)));
+      changed = true;
+    } else {
+      widened.push_back(input);
+    }
+  }
+  if (!changed) {
+    return std::nullopt;
+  }
+  return widened;
+}
+
+// Tries to resolve 'name' against the vector- and simple-function registries
+// for the given input types. Returns the resolved (function, metadata) pair
+// on match, or {nullptr, {}} if no signature matches.
+std::pair<std::shared_ptr<VectorFunction>, VectorFunctionMetadata>
+tryResolveCall(
+    const std::string& name,
+    const std::vector<ExprPtr>& inputs,
+    const TypePtr& resultType,
+    const CompilerCtx& ctx) {
+  const auto inputTypes = getTypes(inputs);
+
+  if (auto functionWithMetadata = getVectorFunctionWithMetadata(
+          name,
+          inputTypes,
+          getConstantInputs(inputs),
+          ctx.queryCtx->queryConfig())) {
+    return {functionWithMetadata->first, functionWithMetadata->second};
+  }
+  if (auto simpleFunctionEntry =
+          simpleFunctions().resolveFunction(name, inputTypes)) {
+    VELOX_USER_CHECK(
+        resultType->equivalent(*simpleFunctionEntry->type().get()),
+        "Found incompatible return types for '{}' ({} vs. {}) "
+        "for input types ({}).",
+        name,
+        simpleFunctionEntry->type(),
+        resultType,
+        folly::join(", ", inputTypes));
+
+    auto vectorFunction =
+        simpleFunctionEntry->createFunction()->createVectorFunction(
+            inputTypes,
+            getConstantInputs(inputs),
+            ctx.queryCtx->queryConfig(),
+            ctx.pool);
+    return {std::move(vectorFunction), simpleFunctionEntry->metadata()};
+  }
+  return {nullptr, {}};
+}
+
 ExprPtr compileCall(
     const TypedExprPtr& expr,
     std::vector<ExprPtr> inputs,
@@ -293,36 +381,28 @@ ExprPtr compileCall(
         ctx.queryCtx->queryConfig());
   }
 
-  std::shared_ptr<VectorFunction> vectorFunction;
-  VectorFunctionMetadata metadata;
+  auto [vectorFunction, metadata] =
+      tryResolveCall(call->name(), inputs, resultType, ctx);
 
-  if (auto functionWithMetadata = getVectorFunctionWithMetadata(
-          call->name(),
-          inputTypes,
-          getConstantInputs(inputs),
-          ctx.queryCtx->queryConfig())) {
-    vectorFunction = functionWithMetadata->first;
-    metadata = functionWithMetadata->second;
-  } else if (
-      auto simpleFunctionEntry =
-          simpleFunctions().resolveFunction(call->name(), inputTypes)) {
-    VELOX_USER_CHECK(
-        resultType->equivalent(*simpleFunctionEntry->type().get()),
-        "Found incompatible return types for '{}' ({} vs. {}) "
-        "for input types ({}).",
-        call->name(),
-        simpleFunctionEntry->type(),
-        resultType,
-        folly::join(", ", inputTypes));
+  // No registered signature matches the bounded input types. If any inputs
+  // are VARCHAR(N)/CHAR(N)/VARBINARYN(N), widen them to unbounded VARCHAR /
+  // VARBINARY and retry. This lets bounded inputs reach unparameterized
+  // signatures from the Presto plan path, which arrives with already-typed
+  // CallTypedExpr and therefore bypasses TypeResolver's implicit-cast logic.
+  if (vectorFunction == nullptr) {
+    if (auto widened = widenBoundedInputs(
+            inputs, trackCpuUsage, ctx.queryCtx->queryConfig())) {
+      auto [widenedFunction, widenedMetadata] =
+          tryResolveCall(call->name(), *widened, resultType, ctx);
+      if (widenedFunction != nullptr) {
+        vectorFunction = std::move(widenedFunction);
+        metadata = widenedMetadata;
+        inputs = std::move(*widened);
+      }
+    }
+  }
 
-    vectorFunction =
-        simpleFunctionEntry->createFunction()->createVectorFunction(
-            inputTypes,
-            getConstantInputs(inputs),
-            ctx.queryCtx->queryConfig(),
-            ctx.pool);
-    metadata = simpleFunctionEntry->metadata();
-  } else {
+  if (vectorFunction == nullptr) {
     const auto& functionName = call->name();
     auto vectorFunctionSignatures = getVectorFunctionSignatures(functionName);
     auto simpleFunctionSignatures =

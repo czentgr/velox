@@ -29,7 +29,7 @@ bool isAny(const TypeSignature& typeSignature) {
 }
 
 /// Returns true only if 'str' contains digits.
-bool isPositiveInteger(const std::string& str) {
+bool isPositiveInteger(std::string_view str) {
   return !str.empty() &&
       std::find_if(str.begin(), str.end(), [](unsigned char c) {
         return !std::isdigit(c);
@@ -97,6 +97,28 @@ std::optional<VarcharEnumParameter> tryResolveVarcharEnumLiteral(
     return it->second;
   }
   return std::nullopt;
+}
+
+// Map a parameterized signature surface name (varchar/varbinary/char) to the
+// corresponding bounded custom-type name when the actual type is the bounded
+// variant. The signature grammar uses one base name for both bounded and
+// unbounded forms (e.g. "varchar" matches both VARCHAR and varchar(N)), but
+// the type registry distinguishes them as VARCHAR vs VARCHARN — so when the
+// signature carries a length parameter, the bind-time name must be promoted
+// to the bounded form to compare equal to the actual type's name.
+inline std::string_view varyingLengthBoundedName(
+    std::string_view signatureName,
+    std::string_view actualName) {
+  if (signatureName == "VARCHAR" && actualName == "VARCHARN") {
+    return "VARCHARN";
+  }
+  if (signatureName == "VARBINARY" && actualName == "VARBINARYN") {
+    return "VARBINARYN";
+  }
+  if (signatureName == "CHAR" && actualName == "CHARN") {
+    return "CHARN";
+  }
+  return signatureName;
 }
 
 // If the parameter is a named field from a row, ensure the names are
@@ -408,6 +430,10 @@ bool SignatureBinderBase::tryBind(
   // Type is not a variable.
   const auto& baseName = typeSignature.baseName();
   auto typeName = boost::algorithm::to_upper_copy(baseName);
+  if (!typeSignature.parameters().empty()) {
+    typeName =
+        std::string(varyingLengthBoundedName(typeName, actualType->name()));
+  }
   if (!boost::algorithm::iequals(typeName, actualType->name())) {
     if (allowCoercion && typeSignature.parameters().empty()) {
       if (auto availableCoercion =

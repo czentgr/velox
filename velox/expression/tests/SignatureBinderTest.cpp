@@ -21,6 +21,7 @@
 #include "velox/functions/prestosql/types/BigintEnumType.h"
 #include "velox/functions/prestosql/types/TimestampWithTimeZoneRegistration.h"
 #include "velox/functions/prestosql/types/TimestampWithTimeZoneType.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/type/HugeInt.h"
 #include "velox/type/OpaqueCustomTypes.h"
 
@@ -1430,6 +1431,155 @@ TEST(SignatureBinderTest, genericCoercions) {
   }
 }
 
+TEST(SignatureBinderTest, arrayTypeCoercions) {
+  auto signature = exec::FunctionSignatureBuilder()
+                       .returnType("boolean")
+                       .argumentType("ARRAY(SMALLINT)")
+                       .argumentType("ARRAY(INTEGER)")
+                       .argumentType("ARRAY(BIGINT)")
+                       .argumentType("ARRAY(REAL)")
+                       .argumentType("ARRAY(DOUBLE)")
+                       .build();
+  testCoercions(
+      signature,
+      {ARRAY(TINYINT()),
+       ARRAY(TINYINT()),
+       ARRAY(TINYINT()),
+       ARRAY(TINYINT()),
+       ARRAY(TINYINT())},
+      {ARRAY(SMALLINT()),
+       ARRAY(INTEGER()),
+       ARRAY(BIGINT()),
+       ARRAY(REAL()),
+       ARRAY(DOUBLE())},
+      BOOLEAN());
+
+  testCoercions(
+      signature,
+      {ARRAY(SMALLINT()),
+       ARRAY(SMALLINT()),
+       ARRAY(SMALLINT()),
+       ARRAY(REAL()),
+       ARRAY(REAL())},
+      {nullptr, ARRAY(INTEGER()), ARRAY(BIGINT()), nullptr, ARRAY(DOUBLE())},
+      BOOLEAN());
+
+  testNoCoercions(
+      signature,
+      {ARRAY(SMALLINT()),
+       ARRAY(INTEGER()),
+       ARRAY(BIGINT()),
+       ARRAY(REAL()),
+       ARRAY(DOUBLE())},
+      BOOLEAN());
+
+  assertCannotBind(
+      signature,
+      {ARRAY(INTEGER()),
+       ARRAY(INTEGER()),
+       ARRAY(INTEGER()),
+       ARRAY(INTEGER()),
+       ARRAY(INTEGER())},
+      /*allowCoercion*/ true);
+
+  assertCannotBind(
+      signature,
+      {ARRAY(SMALLINT()),
+       ARRAY(INTEGER()),
+       ARRAY(VARCHAR()),
+       ARRAY(INTEGER()),
+       ARRAY(INTEGER())},
+      /*allowCoercion*/ true);
+}
+
+TEST(SignatureBinderTest, mapTypeCoercions) {
+  auto signature = exec::FunctionSignatureBuilder()
+                       .returnType("boolean")
+                       .argumentType("MAP(SMALLINT, SMALLINT)")
+                       .argumentType("MAP(INTEGER, INTEGER)")
+                       .argumentType("MAP(BIGINT, BIGINT)")
+                       .argumentType("MAP(REAL, REAL)")
+                       .argumentType("MAP(DOUBLE, DOUBLE)")
+                       .build();
+
+  testCoercions(
+      signature,
+      {MAP(TINYINT(), TINYINT()),
+       MAP(TINYINT(), TINYINT()),
+       MAP(TINYINT(), TINYINT()),
+       MAP(TINYINT(), TINYINT()),
+       MAP(TINYINT(), TINYINT())},
+      {MAP(SMALLINT(), SMALLINT()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(BIGINT(), BIGINT()),
+       MAP(REAL(), REAL()),
+       MAP(DOUBLE(), DOUBLE())},
+      BOOLEAN());
+
+  testCoercions(
+      signature,
+      {MAP(SMALLINT(), TINYINT()),
+       MAP(SMALLINT(), INTEGER()),
+       MAP(TINYINT(), SMALLINT()),
+       MAP(REAL(), REAL()),
+       MAP(REAL(), REAL())},
+      {MAP(SMALLINT(), SMALLINT()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(BIGINT(), BIGINT()),
+       nullptr,
+       MAP(DOUBLE(), DOUBLE())},
+      BOOLEAN());
+
+  testNoCoercions(
+      signature,
+      {MAP(SMALLINT(), SMALLINT()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(BIGINT(), BIGINT()),
+       MAP(REAL(), REAL()),
+       MAP(DOUBLE(), DOUBLE())},
+      BOOLEAN());
+
+  assertCannotBind(
+      signature,
+      {MAP(INTEGER(), INTEGER()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(INTEGER(), INTEGER()),
+       MAP(INTEGER(), INTEGER())},
+      /*allowCoercion*/ true);
+}
+
+TEST(SignatureBinderTest, rowTypeCoercions) {
+  auto signature = exec::FunctionSignatureBuilder()
+                       .returnType("boolean")
+                       .argumentType("ROW(SMALLINT)")
+                       .argumentType("ROW(SMALLINT, INTEGER)")
+                       .argumentType("ROW(BIGINT, DOUBLE)")
+                       .build();
+
+  testCoercions(
+      signature,
+      {ROW({TINYINT()}), ROW({TINYINT(), TINYINT()}), ROW({TINYINT(), REAL()})},
+      {ROW({SMALLINT()}),
+       ROW({SMALLINT(), INTEGER()}),
+       ROW({BIGINT(), DOUBLE()})},
+      BOOLEAN());
+
+  testNoCoercions(
+      signature,
+      {ROW({SMALLINT()}),
+       ROW({SMALLINT(), INTEGER()}),
+       ROW({BIGINT(), DOUBLE()})},
+      BOOLEAN());
+
+  assertCannotBind(
+      signature,
+      {ROW({INTEGER()}),
+       ROW({INTEGER(), INTEGER()}),
+       ROW({INTEGER(), INTEGER()})},
+      /*allowCoercion*/ true);
+}
+
 TEST(SignatureBinderTest, homogeneousRow) {
   // row(T, ...) -> boolean
   {
@@ -1680,6 +1830,38 @@ TEST(SignatureBinderTest, unknownInComplexTypes) {
   }
 }
 
+TEST(SignatureBinderTest, varcharN) {
+  // VARCHAR(N) is a custom type with one integer parameter; it does not bind
+  // to an unparameterized 'varchar' signature directly. Cross-binding is done
+  // by ExprCompiler / TypeResolver, which inserts an explicit
+  // CastTypedExpr(VARCHARN -> VARCHAR) before the binder runs. The binder
+  // itself enforces strict parameter-count matching here, so these calls
+  // should fail to bind.
+  auto signature = exec::FunctionSignatureBuilder()
+                       .argumentType("varchar")
+                       .returnType("varchar")
+                       .build();
+  assertCannotBind(signature, {VARCHAR_N(10)});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("map(varchar, varchar)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {MAP(VARCHAR_N(5), VARCHAR_N(10))});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("array(varchar)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {ARRAY(VARCHAR_N(5))});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("row(varchar)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {ROW({VARCHAR_N(5)})});
+}
+
 TEST(SignatureBinderTest, tryResolveReturnTypeWithCoercions) {
   auto makeSignature = [](const std::string& returnType,
                           const std::vector<std::string>& argTypes) {
@@ -1769,6 +1951,5 @@ TEST(SignatureBinderTest, tryResolveReturnTypeWithCoercions) {
     ASSERT_EQ(coercions[1], nullptr);
   }
 }
-
 } // namespace
 } // namespace facebook::velox::exec::test

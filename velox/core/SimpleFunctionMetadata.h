@@ -308,6 +308,45 @@ struct TypeAnalysis<LongDecimal<P, S>> {
   }
 };
 
+template <typename L>
+struct TypeAnalysis<VarcharN<L>> {
+  void run(TypeAnalysisResults& results) {
+    results.stats.concreteCount++;
+    const auto l = L::name();
+    results.out << fmt::format("varcharn({})", l);
+    results.addVariable(
+        exec::SignatureVariable(
+            l, std::nullopt, exec::ParameterType::kIntegerParameter));
+    results.physicalType = VARCHAR();
+  }
+};
+
+template <typename L>
+struct TypeAnalysis<CharN<L>> {
+  void run(TypeAnalysisResults& results) {
+    results.stats.concreteCount++;
+    const auto l = L::name();
+    results.out << fmt::format("charn({})", l);
+    results.addVariable(
+        exec::SignatureVariable(
+            l, std::nullopt, exec::ParameterType::kIntegerParameter));
+    results.physicalType = VARCHAR();
+  }
+};
+
+template <typename L>
+struct TypeAnalysis<VarbinaryN<L>> {
+  void run(TypeAnalysisResults& results) {
+    results.stats.concreteCount++;
+    const auto l = L::name();
+    results.out << fmt::format("varbinaryn({})", l);
+    results.addVariable(
+        exec::SignatureVariable(
+            l, std::nullopt, exec::ParameterType::kIntegerParameter));
+    results.physicalType = VARBINARY();
+  }
+};
+
 template <typename E>
 struct TypeAnalysis<facebook::velox::BigintEnumT<E>> {
   void run(TypeAnalysisResults& results) {

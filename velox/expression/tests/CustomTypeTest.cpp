@@ -242,7 +242,10 @@ TEST_F(CustomTypeTest, getCustomTypeNames) {
       "BIGINT_ENUM",
       "VARCHAR_ENUM",
       "P4HYPERLOGLOG",
-      "TIME WITH TIME ZONE"};
+      "TIME WITH TIME ZONE",
+      "VARCHARN",
+      "CHARN",
+      "VARBINARYN"};
 #ifdef VELOX_ENABLE_GEO
   expectedTypes.insert("GEOMETRY");
   expectedTypes.insert("SPHERICALGEOGRAPHY");
@@ -297,6 +300,10 @@ TEST_F(CustomTypeTest, nullConstant) {
       checkNullConstant(
           type,
           "test.enum.color:VarcharEnum({\"BLUE\": \"blue\", \"RED\": \"red\"})");
+    } else if (name == "VARCHARN" || name == "CHARN" || name == "VARBINARYN") {
+      // Bounded character / binary types require a single integer length.
+      auto type = getCustomType(name, {TypeParameter(int64_t(10))});
+      checkNullConstant(type, type->toString());
     } else {
       auto type = getCustomType(name, {});
       checkNullConstant(type, type->toString());

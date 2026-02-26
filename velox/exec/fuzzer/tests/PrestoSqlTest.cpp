@@ -18,6 +18,7 @@
 
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/exec/fuzzer/PrestoSql.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 
 namespace facebook::velox::exec::test {
 namespace {
@@ -145,6 +146,27 @@ TEST(PrestoSqlTest, toCallSql) {
               std::make_shared<core::FieldAccessTypedExpr>(VARCHAR(), "c0"),
               std::make_shared<core::ConstantTypedExpr>(VARCHAR(), "a"),
               std::make_shared<core::ConstantTypedExpr>(VARCHAR(), "b"))),
+      "(c0 like 'a' escape 'b')");
+  EXPECT_EQ(
+      toCallSql(
+          std::make_shared<core::CallTypedExpr>(
+              BOOLEAN(),
+              std::vector<core::TypedExprPtr>{
+                  std::make_shared<core::FieldAccessTypedExpr>(
+                      VARCHAR_N(10), "c0"),
+                  std::make_shared<core::ConstantTypedExpr>(VARCHAR_N(10), "a")},
+              "like")),
+      "(c0 like 'a')");
+  EXPECT_EQ(
+      toCallSql(
+          std::make_shared<core::CallTypedExpr>(
+              BOOLEAN(),
+              std::vector<core::TypedExprPtr>{
+                  std::make_shared<core::FieldAccessTypedExpr>(
+                      VARCHAR_N(10), "c0"),
+                  std::make_shared<core::ConstantTypedExpr>(VARCHAR_N(10), "a"),
+                  std::make_shared<core::ConstantTypedExpr>(VARCHAR_N(10), "b")},
+              "like")),
       "(c0 like 'a' escape 'b')");
   VELOX_ASSERT_THROW(
       toCallSql(

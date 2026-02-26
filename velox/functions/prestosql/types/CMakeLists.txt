@@ -30,6 +30,7 @@ velox_add_library(
   KHyperLogLogRegistration.cpp
   QDigestRegistration.cpp
   P4HyperLogLogRegistration.cpp
+  CharNRegistration.cpp
   SfmSketchRegistration.cpp
   TDigestRegistration.cpp
   TimestampWithTimeZoneRegistration.cpp
@@ -41,8 +42,10 @@ velox_add_library(
   SetDigestRegistration.cpp
   UuidRegistration.cpp
   UuidType.cpp
+  VarbinaryNRegistration.cpp
   VarcharEnumRegistration.cpp
   VarcharEnumType.cpp
+  VarcharNRegistration.cpp
   HEADERS
   BigintEnumRegistration.h
   BigintEnumType.h
@@ -64,6 +67,8 @@ velox_add_library(
   KHyperLogLogType.h
   P4HyperLogLogRegistration.h
   P4HyperLogLogType.h
+  CharNRegistration.h
+  CharNType.h
   PrestoTypes.h
   QDigestRegistration.h
   QDigestType.h
@@ -81,8 +86,12 @@ velox_add_library(
   TimestampWithTimeZoneType.h
   UuidRegistration.h
   UuidType.h
+  VarbinaryNRegistration.h
+  VarbinaryNType.h
   VarcharEnumRegistration.h
   VarcharEnumType.h
+  VarcharNRegistration.h
+  VarcharNType.h
 )
 if(VELOX_ENABLE_GEO)
   velox_sources(

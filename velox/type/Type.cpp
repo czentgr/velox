@@ -1573,6 +1573,22 @@ bool hasType(const std::string& name) {
 TypePtr getType(
     const std::string& name,
     const std::vector<TypeParameter>& parameters) {
+  // Route VARCHAR/VARBINARY/CHAR with a length parameter to their bounded
+  // custom-type registrations. Without parameters they resolve to the
+  // unbounded singletons below.
+  if (!parameters.empty() &&
+      parameters[0].kind == TypeParameterKind::kLongLiteral) {
+    if (name == "VARCHAR") {
+      return getCustomType("VARCHARN", parameters);
+    }
+    if (name == "VARBINARY") {
+      return getCustomType("VARBINARYN", parameters);
+    }
+    if (name == "CHAR") {
+      return getCustomType("CHARN", parameters);
+    }
+  }
+
   if (singletonBuiltInTypes().count(name)) {
     return singletonBuiltInTypes().at(name);
   }

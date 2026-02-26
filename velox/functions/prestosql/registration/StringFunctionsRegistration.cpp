@@ -34,6 +34,42 @@ std::shared_ptr<exec::VectorFunction> makeRegexExtract(
   return makeRe2Extract(name, inputArgs, config, /*emptyNoMatch=*/false);
 }
 
+// Registers parameterized signatures for VARCHAR(N) / CHAR(N) inputs. The
+// output type repeats the input length variable so callers preserve
+// bounded-length information through chains of these functions.
+void registerBoundedStringFunctions(const std::string& prefix) {
+  // length(VARCHAR(L)) -> BIGINT and length(CHAR(L)) -> BIGINT.
+  registerFunction<LengthFunction, int64_t, VarcharN<L1>>(
+      {prefix + "length"});
+  registerFunction<LengthFunction, int64_t, CharN<L1>>(
+      {prefix + "length"});
+
+  // substr(VARCHAR(L), BIGINT[, BIGINT]) -> VARCHAR(L).
+  registerFunction<SubstrFunction, VarcharN<L1>, VarcharN<L1>, int64_t>(
+      {prefix + "substr", prefix + "substring"});
+  registerFunction<
+      SubstrFunction,
+      VarcharN<L1>,
+      VarcharN<L1>,
+      int64_t,
+      int64_t>({prefix + "substr", prefix + "substring"});
+  registerFunction<SubstrFunction, CharN<L1>, CharN<L1>, int64_t>(
+      {prefix + "substr", prefix + "substring"});
+  registerFunction<SubstrFunction, CharN<L1>, CharN<L1>, int64_t, int64_t>(
+      {prefix + "substr", prefix + "substring"});
+
+  // trim/ltrim/rtrim preserve length parameter on VARCHAR(N) and CHAR(N).
+  registerFunction<TrimFunction, VarcharN<L1>, VarcharN<L1>>(
+      {prefix + "trim"});
+  registerFunction<TrimFunction, CharN<L1>, CharN<L1>>({prefix + "trim"});
+  registerFunction<LTrimFunction, VarcharN<L1>, VarcharN<L1>>(
+      {prefix + "ltrim"});
+  registerFunction<LTrimFunction, CharN<L1>, CharN<L1>>({prefix + "ltrim"});
+  registerFunction<RTrimFunction, VarcharN<L1>, VarcharN<L1>>(
+      {prefix + "rtrim"});
+  registerFunction<RTrimFunction, CharN<L1>, CharN<L1>>({prefix + "rtrim"});
+}
+
 void registerSimpleFunctions(const std::string& prefix) {
   using namespace stringImpl;
 
@@ -121,6 +157,8 @@ void registerSimpleFunctions(const std::string& prefix) {
 
   registerFunction<Re2RegexpSplit, Array<Varchar>, Varchar, Varchar>(
       {prefix + "regexp_split"});
+
+  registerBoundedStringFunctions(prefix);
 }
 
 void registerSplitToMultiMap(const std::string& prefix) {
