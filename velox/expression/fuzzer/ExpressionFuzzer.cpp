@@ -31,6 +31,8 @@
 #include "velox/expression/fuzzer/ArgumentTypeFuzzer.h"
 #include "velox/expression/fuzzer/ExpressionFuzzer.h"
 #include "velox/expression/signature_parser/ParseUtil.h"
+#include "velox/functions/prestosql/types/VarbinaryNType.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 
 namespace facebook::velox::fuzzer {
 
@@ -311,7 +313,8 @@ ExpressionFuzzer::ExpressionFuzzer(
         continue;
       }
       if (!(signature->variables().empty() || options_.enableComplexTypes ||
-            options_.enableDecimalType)) {
+            options_.enableDecimalType ||
+            containsLengthParameterizedTypeInSignature(*signature))) {
         LOG(WARNING) << "Skipping unsupported signature: " << function.first
                      << signature->toString();
         continue;
@@ -456,7 +459,8 @@ bool ExpressionFuzzer::isSupportedSignature(
           signature,
           "sfmsketch") || // See Issue :
                           // https://github.com/facebookincubator/velox/issues/14643
-      (!options_.enableDecimalType && usesTypeName(signature, "decimal")) ||
+      (!options_.enableDecimalType &&
+       usesTypeName(signature, kNormalizedDecimalTypeName)) ||
       (!options_.enableComplexTypes && useComplexType) ||
       (options_.enableComplexTypes && usesTypeName(signature, "unknown"))) {
     return false;
@@ -468,6 +472,15 @@ bool ExpressionFuzzer::isSupportedSignature(
   }
 
   return true;
+}
+
+bool ExpressionFuzzer::containsLengthParameterizedTypeInSignature(
+    const exec::FunctionSignature& signature) {
+  if (usesTypeName(signature, kNormalizedVarcharTypeName) ||
+      usesTypeName(signature, kNormalizedVarbinaryTypeName)) {
+    return true;
+  }
+  return false;
 }
 
 void ExpressionFuzzer::getTicketsForFunctions() {
@@ -840,7 +853,9 @@ core::TypedExprPtr ExpressionFuzzer::generateExpression(
         expression = generateExpressionFromConcreteSignatures(
             returnType, chosenFunctionName);
         if (!expression &&
-            (options_.enableComplexTypes || options_.enableDecimalType)) {
+            (options_.enableComplexTypes || options_.enableDecimalType ||
+             isVarcharNType(*returnType) ||
+             isVarbinaryNType(*returnType))) {
           expression = generateExpressionFromSignatureTemplate(
               returnType, chosenFunctionName);
         }
@@ -1068,8 +1083,14 @@ core::TypedExprPtr ExpressionFuzzer::generateExpressionFromSignatureTemplate(
   }
 
   auto chosenSignature = *chosen->signature;
+  ArgumentTypeFuzzer::Options argFuzzerOptions;
+  argFuzzerOptions.maxVarcharTypeLength = options_.maxVarcharTypeLength;
   ArgumentTypeFuzzer fuzzer{
-      chosenSignature, returnType, rng_, supportedScalarTypes_};
+      chosenSignature,
+      returnType,
+      rng_,
+      supportedScalarTypes_,
+      argFuzzerOptions};
 
   std::vector<TypePtr> argumentTypes;
   // Check if a custom argument type generator exists for this function.
