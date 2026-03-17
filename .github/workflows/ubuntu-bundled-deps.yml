@@ -88,11 +88,10 @@ jobs:
             "-DVELOX_ENABLE_EXAMPLES=ON"
             "-DVELOX_ENABLE_ARROW=ON"
             "-DVELOX_ENABLE_GEO=ON"
-            "-DVELOX_ENABLE_PARQUET=ON"
+            "-DVELOX_ENABLE_PARQUET=OFF"
             "-DVELOX_MONO_LIBRARY=ON"
             "-DVELOX_BUILD_SHARED=ON"
             "-DVELOX_ENABLE_FAISS=ON"
-            "-DVELOX_ENABLE_REMOTE_FUNCTIONS=ON"
           )
           make debug
 

@@ -16,11 +16,10 @@
 
 #include "velox/dwio/parquet/reader/PageReader.h"
 
-#include <thrift/protocol/TCompactProtocol.h>
-#include <thrift/transport/TBufferTransports.h>
+#include <thrift/lib/cpp2/protocol/Serializer.h>
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/dwio/parquet/tests/ParquetTestBase.h"
-#include "velox/dwio/parquet/thrift/ParquetThriftTypes.h"
+#include "velox/dwio/parquet/thrift/ParquetThrift.h"
 
 using namespace facebook::velox;
 using namespace facebook::velox::common;
@@ -44,17 +43,17 @@ TEST_F(ParquetPageReaderTest, smallPage) {
       headerSize,
       stats);
   auto header = pageReader->readPageHeader();
-  EXPECT_EQ(header.type, thrift::PageType::type::DATA_PAGE);
-  EXPECT_EQ(header.uncompressed_page_size, 16950);
-  EXPECT_EQ(header.compressed_page_size, 10759);
-  EXPECT_EQ(header.data_page_header.num_values, 21738);
+  EXPECT_EQ(*header.type(), thrift::PageType::DATA_PAGE);
+  EXPECT_EQ(*header.uncompressed_page_size(), 16950);
+  EXPECT_EQ(*header.compressed_page_size(), 10759);
+  EXPECT_EQ(*header.data_page_header()->num_values(), 21738);
 
   // expectedMinValue: "aaaa...aaaa"
   std::string expectedMinValue(39, 'a');
   // expectedMaxValue: "zzzz...zzzz"
   std::string expectedMaxValue(49, 'z');
-  auto minValue = header.data_page_header.statistics.min_value;
-  auto maxValue = header.data_page_header.statistics.max_value;
+  auto minValue = *header.data_page_header()->statistics()->min_value();
+  auto maxValue = *header.data_page_header()->statistics()->max_value();
   EXPECT_EQ(minValue, expectedMinValue);
   EXPECT_EQ(maxValue, expectedMaxValue);
   EXPECT_GT(stats.pageLoadTimeNs.sum(), 0);
@@ -76,17 +75,17 @@ TEST_F(ParquetPageReaderTest, largePage) {
       stats);
   auto header = pageReader->readPageHeader();
 
-  EXPECT_EQ(header.type, thrift::PageType::type::DATA_PAGE);
-  EXPECT_EQ(header.uncompressed_page_size, 1050822);
-  EXPECT_EQ(header.compressed_page_size, 66759);
-  EXPECT_EQ(header.data_page_header.num_values, 970);
+  EXPECT_EQ(*header.type(), thrift::PageType::DATA_PAGE);
+  EXPECT_EQ(*header.uncompressed_page_size(), 1050822);
+  EXPECT_EQ(*header.compressed_page_size(), 66759);
+  EXPECT_EQ(*header.data_page_header()->num_values(), 970);
 
   // expectedMinValue: "aaaa...aaaa"
   std::string expectedMinValue(1295, 'a');
   // expectedMinValue: "zzzz...zzzz"
   std::string expectedMaxValue(2255, 'z');
-  auto minValue = header.data_page_header.statistics.min_value;
-  auto maxValue = header.data_page_header.statistics.max_value;
+  auto minValue = *header.data_page_header()->statistics()->min_value();
+  auto maxValue = *header.data_page_header()->statistics()->max_value();
   EXPECT_EQ(minValue, expectedMinValue);
   EXPECT_EQ(maxValue, expectedMaxValue);
   EXPECT_GT(stats.pageLoadTimeNs.sum(), 0);
@@ -227,12 +226,7 @@ namespace {
 
 // Helper to serialize a PageHeader using Thrift compact protocol.
 std::string serializePageHeader(const thrift::PageHeader& header) {
-  auto transport = std::make_shared<apache::thrift::transport::TMemoryBuffer>();
-  apache::thrift::protocol::TCompactProtocolT<
-      apache::thrift::transport::TMemoryBuffer>
-      protocol(transport);
-  header.write(&protocol);
-  return transport->getBufferAsString();
+  return apache::thrift::CompactSerializer::serialize<std::string>(header);
 }
 
 // Helper to create a DATA_PAGE header with specified sizes.
@@ -241,16 +235,16 @@ thrift::PageHeader createDataPageV1Header(
     int32_t compressedSize,
     int32_t numValues) {
   thrift::PageHeader header;
-  header.__set_type(thrift::PageType::DATA_PAGE);
-  header.__set_uncompressed_page_size(uncompressedSize);
-  header.__set_compressed_page_size(compressedSize);
+  header.type() = thrift::PageType::DATA_PAGE;
+  header.uncompressed_page_size() = uncompressedSize;
+  header.compressed_page_size() = compressedSize;
 
   thrift::DataPageHeader dataHeader;
-  dataHeader.__set_num_values(numValues);
-  dataHeader.__set_encoding(thrift::Encoding::PLAIN);
-  dataHeader.__set_definition_level_encoding(thrift::Encoding::RLE);
-  dataHeader.__set_repetition_level_encoding(thrift::Encoding::RLE);
-  header.__set_data_page_header(dataHeader);
+  dataHeader.num_values() = numValues;
+  dataHeader.encoding() = thrift::Encoding::PLAIN;
+  dataHeader.definition_level_encoding() = thrift::Encoding::RLE;
+  dataHeader.repetition_level_encoding() = thrift::Encoding::RLE;
+  header.data_page_header() = dataHeader;
 
   return header;
 }
@@ -263,19 +257,19 @@ thrift::PageHeader createDataPageV2Header(
     int32_t definitionLevelsByteLength,
     int32_t repetitionLevelsByteLength) {
   thrift::PageHeader header;
-  header.__set_type(thrift::PageType::DATA_PAGE_V2);
-  header.__set_uncompressed_page_size(uncompressedSize);
-  header.__set_compressed_page_size(compressedSize);
+  header.type() = thrift::PageType::DATA_PAGE_V2;
+  header.uncompressed_page_size() = uncompressedSize;
+  header.compressed_page_size() = compressedSize;
 
   thrift::DataPageHeaderV2 dataHeader;
-  dataHeader.__set_num_values(numValues);
-  dataHeader.__set_num_nulls(0);
-  dataHeader.__set_num_rows(numValues);
-  dataHeader.__set_encoding(thrift::Encoding::PLAIN);
-  dataHeader.__set_definition_levels_byte_length(definitionLevelsByteLength);
-  dataHeader.__set_repetition_levels_byte_length(repetitionLevelsByteLength);
-  dataHeader.__set_is_compressed(false);
-  header.__set_data_page_header_v2(dataHeader);
+  dataHeader.num_values() = numValues;
+  dataHeader.num_nulls() = 0;
+  dataHeader.num_rows() = numValues;
+  dataHeader.encoding() = thrift::Encoding::PLAIN;
+  dataHeader.definition_levels_byte_length() = definitionLevelsByteLength;
+  dataHeader.repetition_levels_byte_length() = repetitionLevelsByteLength;
+  dataHeader.is_compressed() = false;
+  header.data_page_header_v2() = dataHeader;
 
   return header;
 }
