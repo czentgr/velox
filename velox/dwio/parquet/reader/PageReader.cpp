@@ -90,10 +90,48 @@ PageHeader PageReader::readPageHeader() {
       reinterpret_cast<const uint8_t*>(bufferStart_),
       bufferEnd_ - bufferStart_);
   pageDataStart_ = pageStart_ + result.readBytes;
-  bufferStart_ = reinterpret_cast<const char*>(result.remainedData);
-  bufferEnd_ = bufferStart_ + result.remainedDataBytes;
+
+  // Keep buffer alive so deserialized pageHeader data remains valid.
+  thriftBuffer_ = std::move(result.lastBuffer);
+
+  updateBufferPointersAfterDeserialization(result);
+
   stats_.pageLoadTimeNs.increment(result.readUs * 1'000);
   return pageHeader;
+}
+
+void PageReader::updateBufferPointersAfterDeserialization(
+    const thrift::DeserializeResult& result) {
+  // No refiller used - remainedData points to unconsumed data in original
+  // buffer
+  if (!result.usedRefiller) {
+    bufferStart_ = toCharPtr(result.remainedData);
+    bufferEnd_ = bufferStart_ + result.remainedDataBytes;
+    return;
+  }
+
+  // Refiller was used - position pointers to remaining stream data
+  // The refiller read new data from the stream. We need to calculate how much
+  // of that stream data was consumed and position our pointers accordingly.
+  //
+  // result.readBytes - total bytes consumed from the stream
+  // initialDataBytes - how many bytes were in the initial buffer
+  // Bytes consumed from new stream data = result.readBytes - initialDataBytes
+
+  const size_t initialDataBytes = bufferEnd_ - bufferStart_;
+  const char* streamStart = toCharPtr(result.streamData);
+
+  if (result.readBytes > initialDataBytes) {
+    // We consumed some bytes from the new stream data.
+    const size_t bytesConsumedFromNewStream =
+        result.readBytes - initialDataBytes;
+    bufferStart_ = streamStart + bytesConsumedFromNewStream;
+    bufferEnd_ = streamStart + result.streamDataBytes;
+  } else {
+    // We only consumed from initial buffer, stream data is untouched.
+    bufferStart_ = streamStart;
+    bufferEnd_ = streamStart + result.streamDataBytes;
+  }
 }
 
 const char* PageReader::readBytes(int32_t size, BufferPtr& copy) {
@@ -966,6 +1004,10 @@ bool PageReader::rowsForPage(
   auto rowZero = visitBase_ + visitorRows_[currentVisitorRow_];
   if (rowZero >= rowOfPage_ + numRowsInPage_) {
     seekToPage(rowZero);
+    // If seekToPage set numRowsInPage_=0, we've reached the end of the chunk
+    if (numRowsInPage_ == 0) {
+      return false;
+    }
     if (hasChunkRepDefs_) {
       numLeafNullsConsumed_ = rowOfPage_;
     }
