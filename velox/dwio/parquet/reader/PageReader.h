@@ -216,6 +216,19 @@ class PageReader {
   // 'hasChunkRepDefs_' is false.
   void readPageDefLevels();
 
+  // Updates bufferStart_ and bufferEnd_ based on deserialization result.
+  // Handles both refiller and non-refiller cases.
+  void updateBufferPointersAfterDeserialization(
+      const thrift::DeserializeResult& result);
+
+  static inline const char* toCharPtr(const uint8_t* ptr) {
+    return reinterpret_cast<const char*>(ptr);
+  }
+
+  static inline const char* toCharPtr(const void* ptr) {
+    return static_cast<const char*>(ptr);
+  }
+
   // Returns a pointer to contiguous space for the next 'size' bytes
   // from current position. Copies data into 'copy' if the range
   // straddles buffers. Allocates or resizes 'copy' as needed.
@@ -390,6 +403,9 @@ class PageReader {
   const int64_t chunkSize_;
   const char* bufferStart_{nullptr};
   const char* bufferEnd_{nullptr};
+  // Holds the buffer from the last Thrift deserialization to keep
+  // deserialized data pointers valid
+  std::unique_ptr<folly::IOBuf> thriftBuffer_;
   BufferPtr tempNulls_;
   BufferPtr nullsInReadRange_;
   BufferPtr multiPageNulls_;
