@@ -93,9 +93,15 @@ DeserializeResult deserialize(
                       int totalBytesRead,
                       int requestedBytes) -> std::unique_ptr<folly::IOBuf> {
     const void* data;
-    int32_t dataBytes;
+    int32_t dataBytes{0};
     if (!readData(&data, &dataBytes)) {
-      return folly::IOBuf::wrapBuffer(nullptr, 0);
+      std::cout << "Failed to read " << requestedBytes << " bytes." << std::endl
+                << "  initialBytes: " << initialDataBytes << std::endl
+                << "  currentBytes: " << currentDataBytes << std::endl
+                << "  totalBytesRead: " << totalBytesRead << std::endl
+                << "  requestedBytes: " << requestedBytes << std::endl
+                << "  dataBytes: " << dataBytes << std::endl;
+      return nullptr;
     }
 
     // Return only the new data - the currentData bytes are already in the
