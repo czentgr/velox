@@ -63,19 +63,19 @@ inline std::optional<T> getMax(const thrift::Statistics& columnChunkStats) {
 template <>
 inline std::optional<int64_t> getMin(
     const thrift::Statistics& columnChunkStats) {
-  return columnChunkStats.__isset.min_value
-      ? decodeInt64Stat(columnChunkStats.min_value)
-      : (columnChunkStats.__isset.min ? decodeInt64Stat(columnChunkStats.min)
-                                      : std::nullopt);
+  return columnChunkStats.min_value()
+      ? decodeInt64Stat(*columnChunkStats.min_value())
+      : (columnChunkStats.min() ? decodeInt64Stat(*columnChunkStats.min())
+                                : std::nullopt);
 }
 
 template <>
 inline std::optional<int64_t> getMax(
     const thrift::Statistics& columnChunkStats) {
-  return columnChunkStats.__isset.max_value
-      ? decodeInt64Stat(columnChunkStats.max_value)
-      : (columnChunkStats.__isset.max ? decodeInt64Stat(columnChunkStats.max)
-                                      : std::nullopt);
+  return columnChunkStats.max_value()
+      ? decodeInt64Stat(*columnChunkStats.max_value())
+      : (columnChunkStats.max() ? decodeInt64Stat(*columnChunkStats.max())
+                                : std::nullopt);
 }
 
 template <>

@@ -1030,8 +1030,8 @@ TypePtr ReaderBase::convertType(
       }
       case thrift::ConvertedType::TIME_MILLIS:
         VELOX_CHECK_EQ(
-            schemaElement.type,
-            thrift::Type::INT32,
+            static_cast<int>(*schemaElement.type()),
+            static_cast<int>(thrift::Type::INT32),
             "TIME_MILLIS converted type can only be set for value of thrift::Type::INT32");
         VELOX_CHECK(
             !requestedType ||
@@ -1174,7 +1174,8 @@ TypePtr ReaderBase::convertType(
 
       default:
         VELOX_FAIL(
-            "Unknown Parquet SchemaElement type: {}", *schemaElement.type());
+            "Unknown Parquet SchemaElement type: {}",
+            static_cast<int>(*schemaElement.type()));
     }
   }
 }
