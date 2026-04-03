@@ -1,0 +1,27 @@
+--- a/thrift/lib/cpp2/protocol/CompactProtocol.h
++++ b/thrift/lib/cpp2/protocol/CompactProtocol.h
+@@ -380,6 +380,7 @@ class CompactProtocolReader : public detail::ProtocolBase {
+   template <typename T>
+   friend class ProtocolReaderWithRefill;
+   friend class CompactProtocolReaderWithRefill;
++  friend class CompactV1ProtocolReaderWithRefill;
+ };
+ 
+ struct CompactProtocolReader::StructReadState {
+--- a/thrift/lib/cpp2/protocol/CompactV1Protocol.h
++++ b/thrift/lib/cpp2/protocol/CompactV1Protocol.h
+@@ -140,7 +140,14 @@ class CompactV1ProtocolReader : protected CompactProtocolReader {
+   using CompactProtocolReader::getCursor;
+   using CompactProtocolReader::getCursorPosition;
+ 
++  using CompactProtocolReader::kOmitsStringSizes;
++  using CompactProtocolReader::kHasDeferredRead;
++
+   static constexpr bool kSupportsArithmeticVectors() { return false; }
++
++  template <typename T>
++  friend class ProtocolReaderWithRefill;
++  friend class CompactV1ProtocolReaderWithRefill;
+ };
+ 
+ } // namespace apache::thrift

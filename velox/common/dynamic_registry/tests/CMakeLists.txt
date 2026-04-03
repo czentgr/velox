@@ -26,21 +26,15 @@ add_library(velox_function_non_default_dynamic SHARED DynamicFunctionNonDefault.
 
 add_library(velox_function_dynamic_link_test_common INTERFACE)
 target_link_libraries(velox_function_dynamic_link_test_common INTERFACE fmt::fmt glog::glog xsimd)
-if(folly_SOURCE STREQUAL BUNDLED)
-  # We can prevent errors related to 'is being linked both statically
-  # and dynamically into this executable,' particularly for
-  # folly::hazptr_use_executor(), by "-Wl,--exclude-libs,ALL". But it
-  # works only for bundled Folly.
-  target_link_libraries(velox_function_dynamic_link_test_common INTERFACE Folly::folly)
-else()
-  # We use only for Folly headers for system Folly. If we link Folly
-  # (static library) to shared libraries, multiple Folly exist in the
-  # same process.
-  target_include_directories(
-    velox_function_dynamic_link_test_common
-    INTERFACE $<TARGET_PROPERTY:Folly::folly_deps,INTERFACE_INCLUDE_DIRECTORIES>
-  )
-endif()
+
+# This ensures compatibility during Linux compilation by preventing errors
+# related to 'is being linked both statically and dynamically into this
+# executable,' particularly for folly::hazptr_use_executor().
+message(STATUS "Using Folly headers only for dynamic libraries")
+target_include_directories(
+  velox_function_dynamic_link_test_common
+  INTERFACE $<TARGET_PROPERTY:Folly::folly,INTERFACE_INCLUDE_DIRECTORIES>
+)
 if(APPLE)
   target_link_options(
     velox_function_dynamic_link_test_common
@@ -50,8 +44,6 @@ else()
   # This ensures compatibility during Linux compilation by preventing errors
   # related to 'is being linked both statically and dynamically into this
   # executable,' particularly for folly::hazptr_use_executor().
-  #
-  # This works for bundled Folly but not work with system Folly.
   target_link_options(velox_function_dynamic_link_test_common INTERFACE "-Wl,--exclude-libs,ALL")
 endif()
 

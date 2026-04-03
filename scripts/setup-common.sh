@@ -21,6 +21,7 @@ source "$SCRIPT_DIR"/setup-versions.sh
 
 VELOX_BUILD_SHARED=${VELOX_BUILD_SHARED:-"OFF"}        #Build folly and gflags shared for use in libvelox.so.
 VELOX_ARROW_CMAKE_PATCH=${VELOX_ARROW_CMAKE_PATCH:-""} # avoid error due to +u
+VELOX_FBTHRIFT_CMAKE_PATCH=${VELOX_FBTHRIFT_CMAKE_PATCH:-""}
 CMAKE_BUILD_TYPE="${BUILD_TYPE:-Release}"
 DEPENDENCY_DIR=${DEPENDENCY_DIR:-$(pwd)}
 BUILD_GEOS="${BUILD_GEOS:-true}"
@@ -79,6 +80,17 @@ function install_mvfst {
 
 function install_fbthrift {
   wget_and_untar https://github.com/facebook/fbthrift/archive/refs/tags/"${FB_OS_VERSION}".tar.gz fbthrift
+
+  if [ -z "${VELOX_FBTHRIFT_CMAKE_PATCH}" ]; then
+    # We need to set a different path when building the Dockerfile.
+    ABSOLUTE_SCRIPTDIR=$(realpath "${SCRIPT_DIR}")
+
+    VELOX_FBTHRIFT_CMAKE_PATCH="${ABSOLUTE_SCRIPTDIR}/../CMake/resolve_dependency_modules/fbthrift/compactv1-protocol-refiller.patch"
+  fi
+  (
+    cd "$DEPENDENCY_DIR"/fbthrift || exit 1
+    git apply "${VELOX_FBTHRIFT_CMAKE_PATCH}" || exit 1
+  )
   cmake_install_dir fbthrift -Denable_tests=OFF -DBUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF
 }
 

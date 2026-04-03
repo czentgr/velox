@@ -17,6 +17,11 @@ include(FBThriftCppLibrary)
 add_fbthrift_cpp_library(velox_dwio_parquet_thrift_raw parquet.thrift)
 add_library(velox_dwio_parquet_thrift INTERFACE)
 target_link_libraries(velox_dwio_parquet_thrift INTERFACE velox_dwio_parquet_thrift_raw)
+velox_add_test_headers(
+  velox_dwio_parquet_thrift
+  CompactV1ProtocolReaderWithRefill.h
+  ParquetThrift.h
+)
 if(VELOX_MONO_LIBRARY)
   target_link_libraries(velox velox_dwio_parquet_thrift_raw)
 endif()

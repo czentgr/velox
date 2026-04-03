@@ -17,12 +17,12 @@
 #pragma once
 
 #include <fmt/format.h>
-#include <thrift/lib/cpp2/protocol/ProtocolReaderWithRefill.h>
 #include <ostream>
 #include <string_view>
 
 #include "velox/common/base/Exceptions.h"
 #include "velox/dwio/common/SeekableInputStream.h"
+#include "velox/dwio/parquet/thrift/CompactV1ProtocolReaderWithRefill.h"
 #include "velox/dwio/parquet/thrift/gen-cpp2/parquet_types.h"
 #include "velox/dwio/parquet/thrift/gen-cpp2/parquet_types_custom_protocol.h"
 
@@ -51,7 +51,7 @@ std::ostream& operator<<(std::ostream& os, const Enum& value) {
 
 template <typename ThriftStruct>
 unsigned long deserialize(ThriftStruct* thriftStruct, std::string_view data) {
-  apache::thrift::CompactProtocolReader reader;
+  apache::thrift::CompactV1ProtocolReader reader;
   folly::IOBuf buffer(
       folly::IOBuf::WRAP_BUFFER,
       folly::ByteRange(
@@ -268,11 +268,13 @@ DeserializeResult deserialize(
   std::unique_ptr<folly::IOBuf> lastRefillBuffer;
   bool usedRefiller = false;
   const void* lastStreamData = initialData;
-  int32_t lastStreamDataBytes = initialDataBytes;
   int totalBytesReadBeforeRefill = 0;
   int currentDataBytesInRefill = 0;
   const uint8_t* coalescedBufferStart = nullptr;
   size_t coalescedBufferSize = 0;
+
+  VELOX_CHECK_LE(initialDataBytes, std::numeric_limits<int32_t>::max());
+  int32_t lastStreamDataBytes = initialDataBytes;
 
   StreamReader streamReader{
       input, totalReadUs, lastStreamData, lastStreamDataBytes};
@@ -291,7 +293,7 @@ DeserializeResult deserialize(
       coalescedBufferSize,
       lastRefillBuffer);
 
-  apache::thrift::CompactProtocolReaderWithRefill reader(std::ref(refiller));
+  apache::thrift::CompactV1ProtocolReaderWithRefill reader(std::ref(refiller));
   folly::IOBuf initialBuffer(
       folly::IOBuf::WRAP_BUFFER, initialData, initialDataBytes);
 
@@ -327,7 +329,7 @@ template <typename ThriftStruct>
 uint32_t serialize(
     const ThriftStruct& thriftStruct,
     folly::IOBufQueue* buffer) {
-  apache::thrift::CompactProtocolWriter writer;
+  apache::thrift::CompactV1ProtocolWriter writer;
   writer.setOutput(buffer);
   return thriftStruct.write(&writer);
 }
