@@ -40,22 +40,36 @@ class AzureClientProviderFactories {
       const AzureClientProviderFactory& factory);
 
   /// Get the registered AzureClientProviderFactory for the specified
-  /// account. Throws exception if no factory is registered for the account.
+  /// account. If no factory is registered, creates a default provider
+  /// based on the auth type specified in the config.
   static AzureClientProviderFactory getClientFactory(
-      const std::string& account);
+      const std::string& account,
+      const config::ConfigBase& config);
+
+  /// Returns a factory for the specified auth type from the default
+  /// provider registry. Returns nullptr if the auth type is not supported.
+  static AzureClientProviderFactory getDefaultProviderFactory(
+      const std::string& authType);
 
   /// Uses the registered AzureClientProviderFactory to create an
-  /// AzureBlobClient for file read operations. Throws exception if no factory
-  /// is registered for the account specified in `abfsPath`.
+  /// AzureBlobClient for file read operations. If no factory is registered
+  /// for the account, creates a default provider based on config.
   static std::unique_ptr<AzureBlobClient> getReadFileClient(
       const std::shared_ptr<AbfsPath>& abfsPath,
       const config::ConfigBase& config);
 
   /// Uses the registered AzureClientProviderFactory to create an
-  /// AzureDataLakeFileClient for file write operations. Throws exception if no
-  /// factory is registered for the account specified in `abfsPath`.
+  /// AzureDataLakeFileClient for file write operations. If no factory is
+  /// registered for the account, creates a default provider based on config.
   static std::unique_ptr<AzureDataLakeFileClient> getWriteFileClient(
       const std::shared_ptr<AbfsPath>& abfsPath,
+      const config::ConfigBase& config);
+
+ private:
+  /// Creates a default AzureClientProvider based on the auth type in config.
+  /// Supports SharedKey, OAuth, and SAS authentication.
+  static std::unique_ptr<AzureClientProvider> createDefaultProvider(
+      const std::string& account,
       const config::ConfigBase& config);
 };
 
