@@ -47,24 +47,17 @@ diff --git a/cpp/src/arrow/CMakeLists.txt b/cpp/src/arrow/CMakeLists.txt
 index c911f0f..84673d4 100644
 --- a/cpp/src/arrow/CMakeLists.txt
 +++ b/cpp/src/arrow/CMakeLists.txt
-@@ -645,11 +645,10 @@ else()
+@@ -645,11 +645,11 @@ else()
  endif()
  
  set(ARROW_TESTING_SHARED_LINK_LIBS arrow_shared ${ARROW_GTEST_GTEST})
 -set(ARROW_TESTING_SHARED_PRIVATE_LINK_LIBS arrow::flatbuffers RapidJSON Boost::process)
-+set(ARROW_TESTING_SHARED_PRIVATE_LINK_LIBS arrow::flatbuffers RapidJSON)
++set(ARROW_TESTING_SHARED_PRIVATE_LINK_LIBS arrow::flatbuffers RapidJSON Boost::filesystem Boost::system)
  set(ARROW_TESTING_STATIC_LINK_LIBS
      arrow::flatbuffers
      RapidJSON
 -    Boost::process
++    Boost::filesystem Boost::system
      arrow_static
      ${ARROW_GTEST_GTEST})
  set(ARROW_TESTING_SHARED_INSTALL_INTERFACE_LIBS Arrow::arrow_shared)
-@@ -674,7 +673,6 @@ set(ARROW_TESTING_SRCS
-     testing/fixed_width_test_util.cc
-     testing/generator.cc
-     testing/gtest_util.cc
--    testing/process.cc
-     testing/random.cc
-     testing/util.cc)
- 
