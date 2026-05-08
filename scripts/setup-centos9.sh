@@ -57,7 +57,7 @@ function install_build_prerequisites {
     dnf update -y
   fi
   dnf_install autoconf automake ccache clang gcc-toolset-12 gcc-toolset-14 git libtool \
-    llvm ninja-build python3-pip python3-devel wget which
+    llvm ninja-build pkgconfig python3-pip python3-devel wget which
 
   install_uv
   uv_install cmake@3.31.1
@@ -95,6 +95,7 @@ function install_faiss_deps {
 function install_velox_deps {
   run_and_time install_velox_deps_from_dnf
   run_and_time install_conda
+  run_and_time install_jemalloc
   run_and_time install_gflags
   run_and_time install_glog
   run_and_time install_snappy

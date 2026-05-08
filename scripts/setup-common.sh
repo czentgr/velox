@@ -28,6 +28,8 @@ BUILD_FAISS="${BUILD_FAISS:-true}"
 BUILD_DUCKDB="${BUILD_DUCKDB:-true}"
 EXTRA_ARROW_OPTIONS=${EXTRA_ARROW_OPTIONS:-""}
 SIMDJSON_SKIPUTF8VALIDATION=${SIMDJSON_SKIPUTF8VALIDATION:-"OFF"}
+EXTRA_PKG_CXXFLAGS=${EXTRA_PKG_CXXFLAGS:-""}
+EXTRA_PKG_CXXFLAGS+="${EXTRA_PKG_CXXFLAGS} -DNDEBUG"
 
 USE_CLANG="${USE_CLANG:-false}"
 
@@ -253,6 +255,16 @@ function install_geos {
     wget_and_untar https://github.com/libgeos/geos/archive/"${GEOS_VERSION}".tar.gz geos
     cmake_install_dir geos -DBUILD_TESTING=OFF
   fi
+}
+
+function install_jemalloc {
+  wget_and_untar https://github.com/jemalloc/jemalloc/archive/refs/tags/${JEMALLOC_VERSION}.tar.gz jemalloc
+  (
+    cd "${DEPENDENCY_DIR}"/jemalloc || exit
+    ./autogen.sh --enable-prof --with-version="${JEMALLOC_VERSION}-0-g0000000000000000000000000000000000000000" &&
+      make &&
+      make install
+  )
 }
 
 function install_faiss_deps {
