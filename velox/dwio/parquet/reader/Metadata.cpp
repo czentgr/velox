@@ -47,8 +47,10 @@ size_t heapStringSize(const std::string& s) {
 size_t keyValueMetadataSize(const std::vector<thrift::KeyValue>& keyValues) {
   size_t size = keyValues.size() * sizeof(thrift::KeyValue);
   for (const auto& kv : keyValues) {
-    size += heapStringSize(kv.key);
-    size += heapStringSize(kv.value);
+    size += heapStringSize(*kv.key());
+    if (kv.value()) {
+      size += heapStringSize(*kv.value());
+    }
   }
   return size;
 }
@@ -62,53 +64,59 @@ size_t keyValueMetadataSize(const std::vector<thrift::KeyValue>& keyValues) {
 size_t columnMetadataSize(const thrift::ColumnChunk& column) {
   size_t size = sizeof(thrift::ColumnChunk);
   // Optional heap-backed strings on ColumnChunk itself.
-  if (column.__isset.file_path) {
-    size += heapStringSize(column.file_path);
+  if (column.file_path()) {
+    size += heapStringSize(*column.file_path());
   }
-  if (column.__isset.encrypted_column_metadata) {
-    size += heapStringSize(column.encrypted_column_metadata);
+  if (column.encrypted_column_metadata()) {
+    size += heapStringSize(*column.encrypted_column_metadata());
   }
-  // Optional crypto metadata. The union's inner structs are inline within
-  // ColumnChunk via __isset, so only their heap-backed payloads are added.
-  if (column.__isset.crypto_metadata &&
-      column.crypto_metadata.__isset.ENCRYPTION_WITH_COLUMN_KEY) {
-    const auto& key = column.crypto_metadata.ENCRYPTION_WITH_COLUMN_KEY;
-    size += key.path_in_schema.size() * sizeof(std::string);
-    for (const auto& path : key.path_in_schema) {
+  // Optional crypto metadata. Only the heap-backed payloads of the active
+  // union arm are added.
+  if (column.crypto_metadata() &&
+      column.crypto_metadata()->ENCRYPTION_WITH_COLUMN_KEY()) {
+    const auto& key = *column.crypto_metadata()->ENCRYPTION_WITH_COLUMN_KEY();
+    size += key.path_in_schema()->size() * sizeof(std::string);
+    for (const auto& path : *key.path_in_schema()) {
       size += heapStringSize(path);
     }
-    if (key.__isset.key_metadata) {
-      size += heapStringSize(key.key_metadata);
+    if (key.key_metadata()) {
+      size += heapStringSize(*key.key_metadata());
     }
   }
+  if (!column.meta_data()) {
+    return size;
+  }
+  const auto& metaData = *column.meta_data();
   // Heap-backed vectors and the strings they contain inside ColumnMetaData.
-  size += column.meta_data.encodings.size() * sizeof(thrift::Encoding::type);
-  size += column.meta_data.path_in_schema.size() * sizeof(std::string);
-  for (const auto& path : column.meta_data.path_in_schema) {
+  size += metaData.encodings()->size() * sizeof(thrift::Encoding);
+  size += metaData.path_in_schema()->size() * sizeof(std::string);
+  for (const auto& path : *metaData.path_in_schema()) {
     size += heapStringSize(path);
   }
-  size += keyValueMetadataSize(column.meta_data.key_value_metadata);
-  if (column.meta_data.__isset.encoding_stats) {
-    size += column.meta_data.encoding_stats.size() *
-        sizeof(thrift::PageEncodingStats);
+  if (metaData.key_value_metadata()) {
+    size += keyValueMetadataSize(*metaData.key_value_metadata());
+  }
+  if (metaData.encoding_stats()) {
+    size +=
+        metaData.encoding_stats()->size() * sizeof(thrift::PageEncodingStats);
   }
 
-  // thrift::Statistics is an inline member of thrift::ColumnMetaData. Its POD
-  // fields (null_count, distinct_count) are already in sizeof(ColumnChunk).
-  // Only the heap-backed string payloads need to be added here.
-  if (column.meta_data.__isset.statistics) {
-    const auto& stats = column.meta_data.statistics;
-    if (stats.__isset.min) {
-      size += heapStringSize(stats.min);
+  // thrift::Statistics is an optional member of thrift::ColumnMetaData. Its
+  // POD fields (null_count, distinct_count) are already in sizeof(ColumnChunk)
+  // when present. Only the heap-backed string payloads need to be added here.
+  if (metaData.statistics()) {
+    const auto& stats = *metaData.statistics();
+    if (stats.min()) {
+      size += heapStringSize(*stats.min());
     }
-    if (stats.__isset.max) {
-      size += heapStringSize(stats.max);
+    if (stats.max()) {
+      size += heapStringSize(*stats.max());
     }
-    if (stats.__isset.min_value) {
-      size += heapStringSize(stats.min_value);
+    if (stats.min_value()) {
+      size += heapStringSize(*stats.min_value());
     }
-    if (stats.__isset.max_value) {
-      size += heapStringSize(stats.max_value);
+    if (stats.max_value()) {
+      size += heapStringSize(*stats.max_value());
     }
   }
   return size;
@@ -123,21 +131,29 @@ size_t columnMetadataSize(const thrift::ColumnChunk& column) {
 size_t fileMetadataSize(const thrift::FileMetaData& metadata) {
   size_t totalSize = sizeof(thrift::FileMetaData);
   // Schema vector heap allocation plus per-element name strings.
-  totalSize += metadata.schema.size() * sizeof(thrift::SchemaElement);
-  for (const auto& schema : metadata.schema) {
-    totalSize += heapStringSize(schema.name);
+  totalSize += metadata.schema()->size() * sizeof(thrift::SchemaElement);
+  for (const auto& schema : *metadata.schema()) {
+    totalSize += heapStringSize(*schema.name());
   }
   // Row groups vector heap allocation plus the columns vectors it owns.
-  totalSize += metadata.row_groups.size() * sizeof(thrift::RowGroup);
-  for (const auto& rowGroup : metadata.row_groups) {
-    for (const auto& column : rowGroup.columns) {
+  totalSize += metadata.row_groups()->size() * sizeof(thrift::RowGroup);
+  for (const auto& rowGroup : *metadata.row_groups()) {
+    for (const auto& column : *rowGroup.columns()) {
       totalSize += columnMetadataSize(column);
     }
   }
-  totalSize += keyValueMetadataSize(metadata.key_value_metadata);
-  totalSize += heapStringSize(metadata.created_by);
-  totalSize += metadata.column_orders.size() * sizeof(thrift::ColumnOrder);
-  totalSize += heapStringSize(metadata.footer_signing_key_metadata);
+  if (metadata.key_value_metadata()) {
+    totalSize += keyValueMetadataSize(*metadata.key_value_metadata());
+  }
+  if (metadata.created_by()) {
+    totalSize += heapStringSize(*metadata.created_by());
+  }
+  if (metadata.column_orders()) {
+    totalSize += metadata.column_orders()->size() * sizeof(thrift::ColumnOrder);
+  }
+  if (metadata.footer_signing_key_metadata()) {
+    totalSize += heapStringSize(*metadata.footer_signing_key_metadata());
+  }
   return totalSize;
 }
 
@@ -321,11 +337,12 @@ common::CompressionKind thriftCodecToCompressionKind(
       return common::CompressionKind::CompressionKind_ZSTD;
     case thrift::CompressionCodec::LZ4_RAW:
       return common::CompressionKind::CompressionKind_LZ4;
-    default:
-      VELOX_UNSUPPORTED(
-          "Unsupported compression type: " +
-          std::to_string(static_cast<int>(codec)));
-      break;
+    default: {
+      std::string_view name;
+      apache::thrift::TEnumTraits<thrift::CompressionCodec>::findName(
+          codec, &name);
+      VELOX_UNSUPPORTED("Unsupported compression type: {}", name);
+    }
   }
 }
 

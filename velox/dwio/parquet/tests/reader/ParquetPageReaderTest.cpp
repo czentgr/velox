@@ -553,3 +553,41 @@ TEST_F(ParquetPageReaderTest, corruptRepeatLengthOnlyV2) {
       pageReader->skip(1),
       "Repetition and definition level lengths (2147483632 + 0) exceed");
 }
+
+// Reads two consecutive page headers from a stream whose underlying chunks
+// are small enough that the FBThrift deserializer's refiller has to coalesce
+// several chunks to satisfy a single header. Exercises the post-deserialize
+// bufferStart_/bufferEnd_ state: if those pointers do not track the cursor
+// returned by the protocol reader, the second readPageHeader() either throws
+// or reads bytes from outside any live buffer.
+TEST_F(ParquetPageReaderTest, refillSpansMultipleStreamChunks) {
+  auto firstHeader =
+      createDataPageV1Header(/*uncompressedSize=*/0, /*compressedSize=*/0, 7);
+  auto secondHeader =
+      createDataPageV1Header(/*uncompressedSize=*/0, /*compressedSize=*/0, 11);
+  std::string fullData =
+      serializePageHeader(firstHeader) + serializePageHeader(secondHeader);
+
+  // A small block size forces SeekableArrayInputStream::Next() to hand out
+  // pieces well below a single page header (~30 bytes serialized), so the
+  // refiller must loop and coalesce multiple chunks for both headers.
+  constexpr uint64_t kBlockSize = 4;
+  auto inputStream = std::make_unique<SeekableArrayInputStream>(
+      fullData.data(), fullData.size(), kBlockSize);
+
+  dwio::common::ColumnReaderStatistics stats;
+  auto pageReader = std::make_unique<PageReader>(
+      std::move(inputStream),
+      *leafPool_,
+      common::CompressionKind::CompressionKind_NONE,
+      fullData.size(),
+      stats);
+
+  auto first = pageReader->readPageHeader();
+  EXPECT_EQ(*first.type(), thrift::PageType::DATA_PAGE);
+  EXPECT_EQ(*first.data_page_header()->num_values(), 7);
+
+  auto second = pageReader->readPageHeader();
+  EXPECT_EQ(*second.type(), thrift::PageType::DATA_PAGE);
+  EXPECT_EQ(*second.data_page_header()->num_values(), 11);
+}

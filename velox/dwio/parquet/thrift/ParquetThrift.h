@@ -134,8 +134,10 @@ inline size_t calculateConsumedBytes(
   }
 
   const auto coalescedEnd = coalescedBufferStart + coalescedBufferSize;
+  // 'remainedData' may equal 'coalescedEnd' when the deserializer consumed
+  // every byte of the coalesced buffer; that's a valid terminal state.
   VELOX_CHECK(
-      remainedData >= coalescedBufferStart && remainedData < coalescedEnd,
+      remainedData >= coalescedBufferStart && remainedData <= coalescedEnd,
       "Cursor not in coalesced buffer range");
 
   size_t bytesConsumedFromCoalesced = remainedData - coalescedBufferStart;

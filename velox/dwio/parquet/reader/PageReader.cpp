@@ -94,8 +94,13 @@ PageHeader PageReader::readPageHeader() {
       bufferEnd_ - bufferStart_);
   pageDataStart_ = pageStart_ + result.readBytes;
 
-  // Keep buffer alive so deserialized pageHeader data remains valid.
-  thriftBuffer_ = std::move(result.lastBuffer);
+  // Keep the coalesced buffer alive so deserialized pageHeader data and
+  // 'remainedData' remain valid. Only replace 'thriftBuffer_' when the
+  // deserializer produced a new buffer; otherwise the prior buffer may still
+  // be referenced by 'remainedData' and must outlive this call.
+  if (result.lastBuffer) {
+    thriftBuffer_ = std::move(result.lastBuffer);
+  }
 
   updateBufferPointersAfterDeserialization(result);
 
@@ -105,36 +110,13 @@ PageHeader PageReader::readPageHeader() {
 
 void PageReader::updateBufferPointersAfterDeserialization(
     const thrift::DeserializeResult& result) {
-  // No refiller used - remainedData points to unconsumed data in original
-  // buffer
-  if (!result.usedRefiller) {
-    bufferStart_ = toCharPtr(result.remainedData);
-    bufferEnd_ = bufferStart_ + result.remainedDataBytes;
-    return;
-  }
-
-  // Refiller was used - position pointers to remaining stream data
-  // The refiller read new data from the stream. We need to calculate how much
-  // of that stream data was consumed and position our pointers accordingly.
-  //
-  // result.readBytes - total bytes consumed from the stream
-  // initialDataBytes - how many bytes were in the initial buffer
-  // Bytes consumed from new stream data = result.readBytes - initialDataBytes
-
-  const size_t initialDataBytes = bufferEnd_ - bufferStart_;
-  const char* streamStart = toCharPtr(result.streamData);
-
-  if (result.readBytes > initialDataBytes) {
-    // We consumed some bytes from the new stream data.
-    const size_t bytesConsumedFromNewStream =
-        result.readBytes - initialDataBytes;
-    bufferStart_ = streamStart + bytesConsumedFromNewStream;
-    bufferEnd_ = streamStart + result.streamDataBytes;
-  } else {
-    // We only consumed from initial buffer, stream data is untouched.
-    bufferStart_ = streamStart;
-    bufferEnd_ = streamStart + result.streamDataBytes;
-  }
+  // 'remainedData' is the cursor returned by the protocol reader. It points
+  // either into the original input buffer (no refill) or into the coalesced
+  // IOBuf owned by 'thriftBuffer_' (refill). In both cases the bytes from
+  // 'remainedData' to 'remainedData + remainedDataBytes' are valid for
+  // subsequent reads.
+  bufferStart_ = toCharPtr(result.remainedData);
+  bufferEnd_ = bufferStart_ + result.remainedDataBytes;
 }
 
 const char* PageReader::readBytes(int32_t size, BufferPtr& copy) {
@@ -402,9 +384,12 @@ void PageReader::prepareDataPageV2(const PageHeader& pageHeader, int64_t row) {
   auto levelsSize = repeatLength + defineLength;
   pageData_ += levelsSize;
   // parquet.thrift uses "7: optional bool is_compressed = true;" but
-  // FBThrift doesn't support "optional" and default value. (The
-  // default value isn't used for missing is_compressed.) So we need
-  // to use value_or(true) here.
+  // FBThrift doesn't support "optional" and default value. The problem is
+  // the previous code was checking if the flag is_set. If not, it would skip
+  // even though the parquet default is "true". Was this a bug or would the
+  // flag always be present with the default (true) value?
+  // We are changing the behavior and an absent is_compressed now assumes
+  // compression is used matching the parquet definition.
   if (pageHeader.data_page_header_v2()->is_compressed().value_or(true) &&
       (*pageHeader.compressed_page_size() - levelsSize > 0)) {
     pageData_ = decompressData(
@@ -430,8 +415,8 @@ void PageReader::prepareDataPageV2(const PageHeader& pageHeader, int64_t row) {
 void PageReader::prepareDictionary(const PageHeader& pageHeader) {
   dictionary_.numValues = *pageHeader.dictionary_page_header()->num_values();
   dictionaryEncoding_ = *pageHeader.dictionary_page_header()->encoding();
-  dictionary_.sorted = pageHeader.dictionary_page_header()->is_sorted() &&
-      *pageHeader.dictionary_page_header()->is_sorted();
+  dictionary_.sorted =
+      pageHeader.dictionary_page_header()->is_sorted().value_or(false);
   VELOX_CHECK(
       dictionaryEncoding_ == Encoding::PLAIN_DICTIONARY ||
       dictionaryEncoding_ == Encoding::PLAIN);
