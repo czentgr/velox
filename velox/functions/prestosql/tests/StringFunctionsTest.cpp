@@ -23,6 +23,7 @@
 #include "velox/functions/lib/StringEncodingUtils.h"
 #include "velox/functions/lib/string/StringImpl.h"
 #include "velox/functions/prestosql/tests/utils/FunctionBaseTest.h"
+#include "velox/functions/prestosql/types/CharNType.h"
 #include "velox/functions/prestosql/types/VarcharNType.h"
 
 using namespace facebook::velox;
@@ -947,6 +948,44 @@ TEST_F(StringFunctionsTest, lower) {
   }
 }
 
+TEST_F(StringFunctionsTest, upperLowerBoundedString) {
+  // upper / lower preserve the input length variable on VARCHAR(L) and
+  // CHAR(L) — the parameterized signature returns the same bounded type.
+  auto varcharInput = makeNullableFlatVector<StringView>(
+      {"abc"_sv, "Foo"_sv, ""_sv, std::nullopt}, VARCHAR_N(5));
+  auto upperVarchar =
+      evaluate("upper(c0)", makeRowVector({varcharInput}));
+  EXPECT_EQ(*upperVarchar->type(), *VARCHAR_N(5));
+  test::assertEqualVectors(
+      makeNullableFlatVector<StringView>(
+          {"ABC"_sv, "FOO"_sv, ""_sv, std::nullopt}, VARCHAR_N(5)),
+      upperVarchar);
+
+  auto lowerVarchar =
+      evaluate("lower(c0)", makeRowVector({varcharInput}));
+  EXPECT_EQ(*lowerVarchar->type(), *VARCHAR_N(5));
+  test::assertEqualVectors(
+      makeNullableFlatVector<StringView>(
+          {"abc"_sv, "foo"_sv, ""_sv, std::nullopt}, VARCHAR_N(5)),
+      lowerVarchar);
+
+  auto charInput = makeNullableFlatVector<StringView>(
+      {"abc"_sv, "Bar"_sv, std::nullopt}, CHAR_N(3));
+  auto upperChar = evaluate("upper(c0)", makeRowVector({charInput}));
+  EXPECT_EQ(*upperChar->type(), *CHAR_N(3));
+  test::assertEqualVectors(
+      makeNullableFlatVector<StringView>(
+          {"ABC"_sv, "BAR"_sv, std::nullopt}, CHAR_N(3)),
+      upperChar);
+
+  auto lowerChar = evaluate("lower(c0)", makeRowVector({charInput}));
+  EXPECT_EQ(*lowerChar->type(), *CHAR_N(3));
+  test::assertEqualVectors(
+      makeNullableFlatVector<StringView>(
+          {"abc"_sv, "bar"_sv, std::nullopt}, CHAR_N(3)),
+      lowerChar);
+}
+
 // Test concat vector function
 TEST_F(StringFunctionsTest, concat) {
   size_t maxArgsCount = 10; // cols
@@ -1090,6 +1129,36 @@ TEST_F(StringFunctionsTest, concatVarbinary) {
       },
       VARBINARY());
 
+  test::assertEqualVectors(expected, result);
+}
+
+TEST_F(StringFunctionsTest, concatChar) {
+  // Binary CHAR(L1) + CHAR(L2) -> CHAR(L1 + L2). The constraint engine
+  // computes the output length from the input parameters.
+  auto left = makeFlatVector<StringView>(
+      {"abc"_sv, "foo"_sv, ""_sv, "ABC"_sv}, CHAR_N(3));
+  auto right = makeFlatVector<StringView>(
+      {"DE"_sv, "BAR"_sv, "QQ"_sv, "12"_sv}, CHAR_N(2));
+  auto rows = makeRowVector({left, right});
+
+  auto result = evaluate("concat(c0, c1)", rows);
+
+  EXPECT_EQ(*result->type(), *CHAR_N(5));
+  auto expected = makeFlatVector<StringView>(
+      {"abcDE"_sv, "fooBAR"_sv, "QQ"_sv, "ABC12"_sv}, CHAR_N(5));
+  test::assertEqualVectors(expected, result);
+
+  // Different L1/L2 widths.
+  left = makeFlatVector<StringView>({"x"_sv, "y"_sv}, CHAR_N(1));
+  right = makeFlatVector<StringView>(
+      {"ABCDEFGHIJ"_sv, "1234567890"_sv}, CHAR_N(10));
+  rows = makeRowVector({left, right});
+
+  result = evaluate("concat(c0, c1)", rows);
+
+  EXPECT_EQ(*result->type(), *CHAR_N(11));
+  expected = makeFlatVector<StringView>(
+      {"xABCDEFGHIJ"_sv, "y1234567890"_sv}, CHAR_N(11));
   test::assertEqualVectors(expected, result);
 }
 

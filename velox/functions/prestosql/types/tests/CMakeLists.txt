@@ -15,6 +15,7 @@
 add_executable(
   velox_presto_types_test
   BingTileTypeTest.cpp
+  CharNTypeTest.cpp
   CustomTypeCoercionTest.cpp
   HyperLogLogTypeTest.cpp
   JsonTypeTest.cpp
@@ -26,6 +27,8 @@ add_executable(
   SetDigestTypeTest.cpp
   TypeTestBase.cpp
   UuidTypeTest.cpp
+  VarbinaryNTypeTest.cpp
+  VarcharNTypeTest.cpp
   IPAddressTypeTest.cpp
   IPPrefixTypeTest.cpp
   PrestoTypesTest.cpp

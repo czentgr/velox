@@ -20,9 +20,11 @@
 #include "velox/functions/Udf.h"
 #include "velox/functions/lib/RegistrationHelpers.h"
 #include "velox/functions/prestosql/tests/utils/FunctionBaseTest.h"
+#include "velox/functions/prestosql/types/CharNType.h"
 #include "velox/functions/prestosql/types/IPAddressType.h"
 #include "velox/functions/prestosql/types/IPPrefixType.h"
 #include "velox/functions/prestosql/types/TimestampWithTimeZoneType.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/type/tests/utils/CustomTypesForTesting.h"
 #include "velox/type/tz/TimeZoneMap.h"
 
@@ -173,6 +175,165 @@ TEST_F(ComparisonsTest, betweenVarchar) {
   EXPECT_EQ(true, between("mango"));
   EXPECT_EQ(true, between("orange"));
   EXPECT_EQ(true, between("pear"));
+}
+
+TEST_F(ComparisonsTest, boundedVarchar) {
+  // VARCHAR(L1) vs VARCHAR(L2) with mismatched lengths. The parameterized
+  // signature treats L1 and L2 independently so cross-length comparisons
+  // bind. Values include nulls to cover SQL nullability semantics: any
+  // comparison with a null returns null, except 'distinct from'.
+  auto left = makeNullableFlatVector<StringView>(
+      {"foo"_sv,
+       "bar"_sv,
+       "abc"_sv,
+       std::nullopt,
+       "z"_sv,
+       std::nullopt,
+       ""_sv},
+      VARCHAR_N(3));
+  auto right = makeNullableFlatVector<StringView>(
+      {"foo"_sv,
+       "BAR"_sv,
+       "abcd"_sv,
+       "x"_sv,
+       std::nullopt,
+       std::nullopt,
+       ""_sv},
+      VARCHAR_N(4));
+  auto rows = makeRowVector({left, right});
+
+  auto runAndCompare = [&](const std::string& exprStr,
+                           const VectorPtr& expectedResult) {
+    auto actual = evaluate<SimpleVector<bool>>(exprStr, rows);
+    test::assertEqualVectors(expectedResult, actual);
+  };
+
+  // eq.
+  runAndCompare(
+      "c0 = c1",
+      makeNullableFlatVector<bool>(
+          {true, false, false, std::nullopt, std::nullopt, std::nullopt, true}));
+
+  // neq.
+  runAndCompare(
+      "c0 <> c1",
+      makeNullableFlatVector<bool>(
+          {false,
+           true,
+           true,
+           std::nullopt,
+           std::nullopt,
+           std::nullopt,
+           false}));
+
+  // lt: lexicographic ordering.
+  runAndCompare(
+      "c0 < c1",
+      makeNullableFlatVector<bool>(
+          {false,
+           false,
+           true,
+           std::nullopt,
+           std::nullopt,
+           std::nullopt,
+           false}));
+
+  // gte.
+  runAndCompare(
+      "c0 >= c1",
+      makeNullableFlatVector<bool>(
+          {true, true, false, std::nullopt, std::nullopt, std::nullopt, true}));
+
+  // distinct_from never returns null. Two nulls are NOT distinct; one null
+  // and a non-null ARE distinct.
+  runAndCompare(
+      "c0 is distinct from c1",
+      makeFlatVector<bool>({false, true, true, true, true, false, false}));
+}
+
+TEST_F(ComparisonsTest, boundedChar) {
+  // CHAR(L1) vs CHAR(L2) with mismatched lengths. Storage is unpadded, so
+  // byte-equality on the StringView gives the SQL trailing-space-
+  // insensitive semantics for values produced through cast(), and ordering
+  // is lexicographic on the unpadded form.
+  auto left = makeNullableFlatVector<StringView>(
+      {"foo"_sv,
+       "bar"_sv,
+       "abc"_sv,
+       std::nullopt,
+       "z"_sv,
+       std::nullopt,
+       ""_sv},
+      CHAR_N(3));
+  auto right = makeNullableFlatVector<StringView>(
+      {"foo"_sv,
+       "BAR"_sv,
+       "abcde"_sv,
+       "x"_sv,
+       std::nullopt,
+       std::nullopt,
+       ""_sv},
+      CHAR_N(5));
+  auto rows = makeRowVector({left, right});
+
+  auto runAndCompare = [&](const std::string& exprStr,
+                           const VectorPtr& expectedResult) {
+    auto actual = evaluate<SimpleVector<bool>>(exprStr, rows);
+    test::assertEqualVectors(expectedResult, actual);
+  };
+
+  // eq across CHAR(3) and CHAR(5).
+  runAndCompare(
+      "c0 = c1",
+      makeNullableFlatVector<bool>(
+          {true, false, false, std::nullopt, std::nullopt, std::nullopt, true}));
+
+  // neq.
+  runAndCompare(
+      "c0 <> c1",
+      makeNullableFlatVector<bool>(
+          {false,
+           true,
+           true,
+           std::nullopt,
+           std::nullopt,
+           std::nullopt,
+           false}));
+
+  // lt.
+  runAndCompare(
+      "c0 < c1",
+      makeNullableFlatVector<bool>(
+          {false,
+           false,
+           true,
+           std::nullopt,
+           std::nullopt,
+           std::nullopt,
+           false}));
+
+  // lte.
+  runAndCompare(
+      "c0 <= c1",
+      makeNullableFlatVector<bool>(
+          {true, false, true, std::nullopt, std::nullopt, std::nullopt, true}));
+
+  // gt.
+  runAndCompare(
+      "c0 > c1",
+      makeNullableFlatVector<bool>(
+          {false,
+           true,
+           false,
+           std::nullopt,
+           std::nullopt,
+           std::nullopt,
+           false}));
+
+  // distinct_from.
+  runAndCompare(
+      "c0 is distinct from c1",
+      makeFlatVector<bool>({false, true, true, true, true, false, false}));
 }
 
 TEST_F(ComparisonsTest, betweenDate) {

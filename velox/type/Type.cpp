@@ -226,6 +226,12 @@ TypePtr Type::create(const folly::dynamic& obj) {
       params.emplace_back(
           deserializeEnumParam<std::string>(obj["kVarcharEnumParam"]));
     }
+    // Bounded character/binary types (VARCHARN, VARBINARYN, CHARN) serialize
+    // their length under "length"; reconstruct the kLongLiteral parameter
+    // from it.
+    if (obj.find("length") != obj.items().end()) {
+      params.emplace_back(static_cast<int64_t>(obj["length"].asInt()));
+    }
     return getCustomType(typeName, params);
   }
 
@@ -1564,6 +1570,13 @@ bool hasType(const std::string& name) {
   }
 
   if (customTypeExists(name)) {
+    return true;
+  }
+
+  // 'CHAR' is a surface-syntax alias that routes to the CHARN custom type
+  // when registered; treat it as a known name so signatures referencing
+  // 'char(N)' validate.
+  if (name == "CHAR" && customTypeExists("CHARN")) {
     return true;
   }
 

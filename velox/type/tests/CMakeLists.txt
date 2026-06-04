@@ -41,6 +41,7 @@ target_link_libraries(
   velox_type_test_lib
   velox_common_base
   velox_expression
+  velox_presto_types
   Folly::folly
   GTest::gtest
   GTest::gtest_main

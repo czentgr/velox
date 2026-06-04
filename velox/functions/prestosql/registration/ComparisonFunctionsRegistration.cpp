@@ -39,6 +39,12 @@ void registerNonSimdizableScalar(const std::vector<std::string>& aliases) {
   registerFunction<T, TReturn, TimeWithTimezone, TimeWithTimezone>(aliases);
   registerFunction<T, TReturn, IPAddress, IPAddress>(aliases);
 }
+
+template <template <class> class T, typename TReturn>
+void registerBoundedStringScalar(const std::vector<std::string>& aliases) {
+  registerFunction<T, TReturn, VarcharN<L1>, VarcharN<L2>>(aliases);
+  registerFunction<T, TReturn, CharN<L1>, CharN<L2>>(aliases);
+}
 } // namespace
 
 void registerComparisonFunctions(const std::string& prefix) {
@@ -50,35 +56,43 @@ void registerComparisonFunctions(const std::string& prefix) {
   registerIPPrefixType();
 
   registerNonSimdizableScalar<EqFunction, bool>({prefix + "eq"});
+  registerBoundedStringScalar<EqFunction, bool>({prefix + "eq"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_eq, prefix + "eq");
   registerFunction<EqFunction, bool, Generic<T1>, Generic<T1>>({prefix + "eq"});
 
   registerNonSimdizableScalar<NeqFunction, bool>({prefix + "neq"});
+  registerBoundedStringScalar<NeqFunction, bool>({prefix + "neq"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_neq, prefix + "neq");
   registerFunction<NeqFunction, bool, Generic<T1>, Generic<T1>>(
       {prefix + "neq"});
 
   registerNonSimdizableScalar<LtFunction, bool>({prefix + "lt"});
+  registerBoundedStringScalar<LtFunction, bool>({prefix + "lt"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_lt, prefix + "lt");
   registerFunction<LtFunction, bool, Orderable<T1>, Orderable<T1>>(
       {prefix + "lt"});
 
   registerNonSimdizableScalar<GtFunction, bool>({prefix + "gt"});
+  registerBoundedStringScalar<GtFunction, bool>({prefix + "gt"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_gt, prefix + "gt");
   registerFunction<GtFunction, bool, Orderable<T1>, Orderable<T1>>(
       {prefix + "gt"});
 
   registerNonSimdizableScalar<LteFunction, bool>({prefix + "lte"});
+  registerBoundedStringScalar<LteFunction, bool>({prefix + "lte"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_lte, prefix + "lte");
   registerFunction<LteFunction, bool, Orderable<T1>, Orderable<T1>>(
       {prefix + "lte"});
 
   registerNonSimdizableScalar<GteFunction, bool>({prefix + "gte"});
+  registerBoundedStringScalar<GteFunction, bool>({prefix + "gte"});
   VELOX_REGISTER_VECTOR_FUNCTION(udf_simd_comparison_gte, prefix + "gte");
   registerFunction<GteFunction, bool, Orderable<T1>, Orderable<T1>>(
       {prefix + "gte"});
 
   registerFunction<DistinctFromFunction, bool, Varchar, Varchar>(
+      {prefix + "distinct_from"});
+  registerBoundedStringScalar<DistinctFromFunction, bool>(
       {prefix + "distinct_from"});
   registerFunction<DistinctFromFunction, bool, Generic<T1>, Generic<T1>>(
       {prefix + "distinct_from"});
