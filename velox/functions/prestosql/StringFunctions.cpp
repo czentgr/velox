@@ -149,7 +149,7 @@ class ConcatFunction : public exec::VectorFunction {
   }
 
   static std::vector<std::shared_ptr<exec::FunctionSignature>> signatures() {
-    return {
+    std::vector<std::shared_ptr<exec::FunctionSignature>> signatures{
         // varchar, varchar,.. -> varchar
         exec::FunctionSignatureBuilder()
             .returnType("varchar")
@@ -165,6 +165,19 @@ class ConcatFunction : public exec::VectorFunction {
             .variableArity("varbinary")
             .build(),
     };
+    if (hasType("CHARN")) {
+      // char(L1), char(L2) -> char(L1 + L2). Binary-only, mirroring Presto's
+      // CHAR concat.
+      signatures.push_back(exec::FunctionSignatureBuilder()
+                               .integerVariable("L1")
+                               .integerVariable("L2")
+                               .integerVariable("L3", "L1 + L2")
+                               .returnType("char(L3)")
+                               .argumentType("char(L1)")
+                               .argumentType("char(L2)")
+                               .build());
+    }
+    return signatures;
   }
 
   static exec::VectorFunctionMetadata metadata() {

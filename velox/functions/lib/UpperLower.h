@@ -57,7 +57,7 @@ class UpperLowerTemplateFunction : public exec::VectorFunction {
   void apply(
       const SelectivityVector& rows,
       std::vector<VectorPtr>& args,
-      const TypePtr& /*outputType*/,
+      const TypePtr& outputType,
       exec::EvalCtx& context,
       VectorPtr& result) const override {
     VELOX_CHECK(args.size() == 1);
@@ -70,9 +70,10 @@ class UpperLowerTemplateFunction : public exec::VectorFunction {
 
     auto ascii = isAscii(inputStringsVector, rows);
 
-    // Not in place path.
+    // Not in place path. Pass through outputType so parameterized signatures
+    // (VARCHAR(L), CHAR(L)) preserve their bounded type on the result.
     VectorPtr emptyVectorPtr;
-    prepareFlatResultsVector(result, rows, context, emptyVectorPtr);
+    prepareFlatResultsVector(result, rows, context, emptyVectorPtr, outputType);
     auto* resultFlatVector = result->as<FlatVector<StringView>>();
 
     StringEncodingTemplateWrapper<ApplyInternal>::apply(

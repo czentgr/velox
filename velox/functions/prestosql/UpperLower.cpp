@@ -27,14 +27,35 @@ using PrestoLowerFunction = UpperLowerTemplateFunction<
     /*turkishCasing=*/false,
     /*greekFinalSigma=*/false>;
 
+namespace {
+std::vector<std::shared_ptr<exec::FunctionSignature>> upperLowerSignatures() {
+  auto signatures = PrestoUpperFunction::signatures();
+  if (hasType("VARCHARN")) {
+    signatures.push_back(exec::FunctionSignatureBuilder()
+                             .integerVariable("L")
+                             .returnType("varchar(L)")
+                             .argumentType("varchar(L)")
+                             .build());
+  }
+  if (hasType("CHARN")) {
+    signatures.push_back(exec::FunctionSignatureBuilder()
+                             .integerVariable("L")
+                             .returnType("char(L)")
+                             .argumentType("char(L)")
+                             .build());
+  }
+  return signatures;
+}
+} // namespace
+
 VELOX_DECLARE_VECTOR_FUNCTION(
     udf_upper,
-    PrestoUpperFunction::signatures(),
+    upperLowerSignatures(),
     (std::make_unique<PrestoUpperFunction>()));
 
 VELOX_DECLARE_VECTOR_FUNCTION(
     udf_lower,
-    PrestoLowerFunction::signatures(),
+    upperLowerSignatures(),
     (std::make_unique<PrestoLowerFunction>()));
 
 } // namespace facebook::velox::functions

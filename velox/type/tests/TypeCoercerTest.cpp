@@ -17,6 +17,12 @@
 #include "velox/type/TypeCoercer.h"
 #include <gtest/gtest.h>
 #include "velox/common/base/tests/GTestUtils.h"
+#include "velox/functions/prestosql/types/CharNRegistration.h"
+#include "velox/functions/prestosql/types/CharNType.h"
+#include "velox/functions/prestosql/types/VarbinaryNRegistration.h"
+#include "velox/functions/prestosql/types/VarbinaryNType.h"
+#include "velox/functions/prestosql/types/VarcharNRegistration.h"
+#include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/type/CastRegistry.h"
 
 namespace facebook::velox {
@@ -340,6 +346,77 @@ TEST(TypeCoercerTest, leastCommonSuperType) {
   ASSERT_TRUE(
       TypeCoercer::defaults().leastCommonSuperType(
           MAP(INTEGER(), REAL()), ROW({INTEGER(), REAL()})) == nullptr);
+}
+
+TEST(TypeCoercerTest, leastCommonSuperTypeBoundedString) {
+  registerVarcharNType();
+  registerVarbinaryNType();
+  registerCharNType();
+
+  // Two VARCHAR(N) widen to the larger length.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(10), VARCHAR_N(20)),
+      VARCHAR_N(20));
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(20), VARCHAR_N(10)),
+      VARCHAR_N(20));
+  // Equal lengths.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(15), VARCHAR_N(15)),
+      VARCHAR_N(15));
+
+  // Two VARBINARY(N) widen to the larger length.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARBINARY_N(10), VARBINARY_N(20)),
+      VARBINARY_N(20));
+
+  // VARCHAR(N) common with unbounded VARCHAR widens to unbounded VARCHAR.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(10), VARCHAR()), VARCHAR());
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR(), VARCHAR_N(10)), VARCHAR());
+
+  // VARBINARY(N) common with unbounded VARBINARY widens to unbounded
+  // VARBINARY.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(VARBINARY_N(10), VARBINARY()),
+      VARBINARY());
+
+  // Two CHAR(N) widen to the larger length.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(CHAR_N(5), CHAR_N(8)), CHAR_N(8));
+
+  // CHAR(N) common with VARCHAR(M) widens to VARCHAR(max(N, M)).
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(CHAR_N(10), VARCHAR_N(20)),
+      VARCHAR_N(20));
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(CHAR_N(25), VARCHAR_N(20)),
+      VARCHAR_N(25));
+
+  // CHAR(N) common with unbounded VARCHAR widens to unbounded VARCHAR.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(CHAR_N(10), VARCHAR()), VARCHAR());
+
+  // Cross-base no-supertype cases.
+  ASSERT_TRUE(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(10), VARBINARY_N(10)) ==
+      nullptr);
+  ASSERT_TRUE(
+      TypeCoercer::defaults().leastCommonSuperType(VARCHAR_N(10), INTEGER()) == nullptr);
+  ASSERT_TRUE(
+      TypeCoercer::defaults().leastCommonSuperType(CHAR_N(10), VARBINARY()) == nullptr);
+
+  // Bounded types nested in containers propagate through the recursive
+  // supertype computation.
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(
+          ARRAY(VARCHAR_N(10)), ARRAY(VARCHAR_N(30))),
+      ARRAY(VARCHAR_N(30)));
+  VELOX_ASSERT_EQ_TYPES(
+      TypeCoercer::defaults().leastCommonSuperType(
+          MAP(INTEGER(), CHAR_N(5)), MAP(INTEGER(), CHAR_N(7))),
+      MAP(INTEGER(), CHAR_N(7)));
 }
 
 TEST(TypeCoercerTest, parametricBuiltinTargetDoesNotThrow) {

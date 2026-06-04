@@ -19,8 +19,11 @@
 #include "velox/common/base/tests/GTestUtils.h"
 #include "velox/functions/prestosql/types/BigintEnumRegistration.h"
 #include "velox/functions/prestosql/types/BigintEnumType.h"
+#include "velox/functions/prestosql/types/CharNRegistration.h"
+#include "velox/functions/prestosql/types/CharNType.h"
 #include "velox/functions/prestosql/types/TimestampWithTimeZoneRegistration.h"
 #include "velox/functions/prestosql/types/TimestampWithTimeZoneType.h"
+#include "velox/functions/prestosql/types/VarcharNRegistration.h"
 #include "velox/functions/prestosql/types/VarcharNType.h"
 #include "velox/type/HugeInt.h"
 #include "velox/type/OpaqueCustomTypes.h"
@@ -1831,6 +1834,8 @@ TEST(SignatureBinderTest, unknownInComplexTypes) {
 }
 
 TEST(SignatureBinderTest, varcharN) {
+  registerVarcharNType();
+
   // VARCHAR(N) is a custom type with one integer parameter; it does not bind
   // to an unparameterized 'varchar' signature directly. Cross-binding is done
   // by ExprCompiler / TypeResolver, which inserts an explicit
@@ -1860,6 +1865,107 @@ TEST(SignatureBinderTest, varcharN) {
                   .returnType("boolean")
                   .build();
   assertCannotBind(signature, {ROW({VARCHAR_N(5)})});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("varchar(L)")
+                  .returnType("varchar(L)")
+                  .build();
+  testSignatureBinder(signature, {VARCHAR_N(20)}, VARCHAR_N(20));
+
+  // Multi-arg 'varchar(L)' must agree on L across all positions.
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("varchar(L)")
+                  .argumentType("varchar(L)")
+                  .returnType("varchar(L)")
+                  .build();
+  testSignatureBinder(
+      signature, {VARCHAR_N(15), VARCHAR_N(15)}, VARCHAR_N(15));
+  assertCannotBind(signature, {VARCHAR_N(10), VARCHAR_N(20)});
+
+  // Constraint computes return length from inputs.
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L1")
+                  .integerVariable("L2")
+                  .integerVariable("L3", "L1 + L2")
+                  .argumentType("varchar(L1)")
+                  .argumentType("varchar(L2)")
+                  .returnType("varchar(L3)")
+                  .build();
+  testSignatureBinder(
+      signature, {VARCHAR_N(7), VARCHAR_N(13)}, VARCHAR_N(20));
+}
+
+TEST(SignatureBinderTest, charN) {
+  registerVarcharNType();
+  registerCharNType();
+
+  auto signature = exec::FunctionSignatureBuilder()
+                       .argumentType("char")
+                       .returnType("char")
+                       .build();
+  assertCannotBind(signature, {CHAR_N(10)});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("map(char, char)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {MAP(CHAR_N(5), CHAR_N(10))});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("array(char)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {ARRAY(CHAR_N(5))});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .argumentType("row(char)")
+                  .returnType("boolean")
+                  .build();
+  assertCannotBind(signature, {ROW({CHAR_N(5)})});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("char(L)")
+                  .returnType("char(L)")
+                  .build();
+  testSignatureBinder(signature, {CHAR_N(20)}, CHAR_N(20));
+
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("char(L)")
+                  .argumentType("char(L)")
+                  .returnType("char(L)")
+                  .build();
+  testSignatureBinder(signature, {CHAR_N(15), CHAR_N(15)}, CHAR_N(15));
+  assertCannotBind(signature, {CHAR_N(10), CHAR_N(20)});
+
+  // Mirror Presto's binary CHAR concat: char(L1) + char(L2) -> char(L1+L2).
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L1")
+                  .integerVariable("L2")
+                  .integerVariable("L3", "L1 + L2")
+                  .argumentType("char(L1)")
+                  .argumentType("char(L2)")
+                  .returnType("char(L3)")
+                  .build();
+  testSignatureBinder(signature, {CHAR_N(5), CHAR_N(7)}, CHAR_N(12));
+
+  // CHAR(N) and VARCHAR(N) are distinct custom types — formals must match.
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("varchar(L)")
+                  .returnType("varchar(L)")
+                  .build();
+  assertCannotBind(signature, {CHAR_N(10)});
+
+  signature = exec::FunctionSignatureBuilder()
+                  .integerVariable("L")
+                  .argumentType("char(L)")
+                  .returnType("char(L)")
+                  .build();
+  assertCannotBind(signature, {VARCHAR_N(10)});
 }
 
 TEST(SignatureBinderTest, tryResolveReturnTypeWithCoercions) {
