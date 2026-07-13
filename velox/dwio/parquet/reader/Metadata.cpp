@@ -232,6 +232,30 @@ inline std::optional<std::string> getMax(
       : columnChunkStats.max().to_optional();
 }
 
+std::optional<Timestamp> int64ToTimestamp(
+    std::optional<int64_t> value,
+    std::optional<thrift::ConvertedType> convertedType,
+    const std::optional<thrift::LogicalType>& logicalType) {
+  if (!value.has_value()) {
+    return std::nullopt;
+  }
+  if (logicalType.has_value() &&
+      logicalType->getType() == thrift::LogicalType::Type::TIMESTAMP) {
+    auto unit = logicalType->get_TIMESTAMP().unit();
+    const auto unitType = unit->getType();
+    if (unitType == thrift::TimeUnit::Type::MILLIS) {
+      return Timestamp::fromMillis(value.value());
+    } else if (unitType == thrift::TimeUnit::Type::NANOS) {
+      return Timestamp::fromNanos(value.value());
+    }
+    return Timestamp::fromMicros(value.value());
+  }
+  if (convertedType == thrift::ConvertedType::TIMESTAMP_MILLIS) {
+    return Timestamp::fromMillis(value.value());
+  }
+  return Timestamp::fromMicros(value.value());
+}
+
 std::unique_ptr<dwio::common::ColumnStatistics> buildColumnStatisticsFromThrift(
     const thrift::Statistics& columnChunkStats,
     const velox::Type& type,
